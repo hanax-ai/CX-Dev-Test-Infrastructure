@@ -476,6 +476,40 @@ This infrastructure and associated documentation are proprietary to Citadel AI. 
 **Last Updated:** July 28, 2025  
 **Repository:** https://github.com/hanax-ai/CX-Dev-Test-Infrastructure
 
+## 📁 Documentation Structure
+
+### Core Documentation
+
+- **[README.md](README.md)** - This file: Complete infrastructure overview and quick start guide
+- **[CX-Documents/](CX-Documents/)** - Comprehensive documentation library
+
+### Detailed Documentation
+
+- **[API Documentation](CX-Documents/API.md)** - Complete API reference with examples and SDKs
+- **[Contributing Guidelines](CX-Documents/CONTRIBUTING.md)** - Development workflows and standards
+- **[Changelog](CX-Documents/CHANGELOG.md)** - Version history and release notes
+- **[Project Overview](CX-Documents/PROJECT-OVERVIEW.md)** - Executive summary and strategic analysis
+
+### Architecture Documentation
+
+- **[Strategic Architecture Overview](CX-Documents/Strategic-Architecture-Overview.md)** - Comprehensive infrastructure documentation
+- **[Infrastructure Architecture](CX-Documents/CX-RnD-Infrastructure-Architecture.md)** - Detailed system architecture
+- **[Tech Stack Architecture](CX-Documents/Citadel%20AI%20Operating%20System%20-%20Updated%20Tech%20Stack%20Architecture.md)** - Technology framework overview
+
+### Server Configuration Guides
+
+- **[Development Server](CX-Documents/CX-Dev-Server-Configuration.md)** - Dev environment setup (192.168.10.33)
+- **[Test Server](CX-Documents/CX-Test-Server-Configuration.md)** - Testing environment config (192.168.10.34)
+- **[DevOps Server](CX-Documents/CX-DevOps-Server-Configuration.md)** - CI/CD automation setup (192.168.10.36)
+- **[Database Server](CX-Documents/CX-Database-Server-Configuration.md)** - PostgreSQL/Redis config (192.168.10.35)
+- **[Vector Database](CX-Documents/CX-Vector-Database-Server-Configuration.md)** - Qdrant setup (192.168.10.30)
+- **[LLM & Orchestration](CX-Documents/CX-LLM-and-Orchestration-Server-Configuration.md)** - AI model coordination (192.168.10.31)
+- **[Monitoring Server](CX-Documents/CX-Metric-Server-Configuration.md)** - Prometheus/Grafana (192.168.10.37)
+- **[Web Server](CX-Documents/CX-Web-Server-Configuration.md)** - OpenWebUI setup (192.168.10.38)
+- **[API Gateway](CX-Documents/CX-API-Gateway-Server-Configuration.md)** - FastAPI gateway (192.168.10.39)
+
 ---
 
-*This README provides comprehensive documentation for the CX Dev & Test Infrastructure. For additional technical documentation, architecture diagrams, and operational procedures, please refer to the internal documentation portal.*
+*This README provides the primary infrastructure overview. For comprehensive technical documentation, detailed configuration guides, and operational procedures, explore the **[CX-Documents](CX-Documents/)** directory.*
+ 
+ 
