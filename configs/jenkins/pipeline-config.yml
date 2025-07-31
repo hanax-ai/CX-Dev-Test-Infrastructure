@@ -1,0 +1,78 @@
+# CX R&D Infrastructure - Jenkins Pipeline Configuration
+# Defines CI/CD pipelines for infrastructure deployment
+# Updated: July 31, 2025
+
+pipelines:
+  infrastructure_deployment:
+    name: "CX Infrastructure Deployment"
+    description: "Deploy and configure CX R&D Infrastructure servers"
+    triggers:
+      - type: "scm"
+        schedule: "H 2 * * *"  # Daily at 2 AM
+      - type: "webhook"
+        token: "cx-infra-deploy"
+    
+    stages:
+      - name: "checkout"
+        script: |
+          git clone https://github.com/hanax-ai/CX-Dev-Test-Infrastructure.git
+          cd CX-Dev-Test-Infrastructure
+      
+      - name: "terraform_plan"
+        script: |
+          cd configs/terraform
+          terraform init
+          terraform plan -out=tfplan
+      
+      - name: "terraform_apply"
+        script: |
+          terraform apply tfplan
+      
+      - name: "ansible_deploy"
+        script: |
+          cd configs/ansible
+          ansible-playbook -i inventory.yml site.yml
+      
+      - name: "health_check"
+        script: |
+          ./scripts/health-check.sh
+
+  server_monitoring:
+    name: "CX Server Health Monitoring"
+    description: "Monitor health of all CX infrastructure servers"
+    triggers:
+      - type: "cron"
+        schedule: "*/15 * * * *"  # Every 15 minutes
+    
+    stages:
+      - name: "health_check"
+        script: |
+          ./scripts/health-check.sh
+      
+      - name: "generate_report"
+        script: |
+          echo "Health check completed at $(date)" > health-report.txt
+          cat health-report.txt
+
+agents:
+  azure_devops:
+    name: "hx-devops-agent-01"
+    organization: "hana-x"
+    pool: "Default"
+    capabilities:
+      - "terraform"
+      - "ansible"
+      - "docker"
+      - "python"
+
+notifications:
+  slack:
+    webhook_url: "${SLACK_WEBHOOK_URL}"
+    channels:
+      - "#cx-infrastructure"
+      - "#devops-alerts"
+  
+  email:
+    recipients:
+      - "jarvisr@hana-x.ai"
+      - "devops-team@hana-x.ai"

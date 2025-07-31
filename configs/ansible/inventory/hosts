@@ -1,0 +1,69 @@
+# CX R&D Infrastructure Server Inventory
+# Static inventory file for Ansible hosts
+# Updated: July 31, 2025
+
+[cx_web_servers]
+cx-web ansible_host=192.168.10.28 ansible_user=agent0 ansible_become=yes
+
+[cx_api_servers]
+cx-api-gateway ansible_host=192.168.10.29 ansible_user=agent0 ansible_become=yes
+
+[cx_database_servers]
+cx-database ansible_host=192.168.10.30 ansible_user=agent0 ansible_become=yes
+
+[cx_vector_db_servers]
+cx-vector-db ansible_host=192.168.10.31 ansible_user=agent0 ansible_become=yes
+
+[cx_llm_servers]
+cx-llm-orchestration ansible_host=192.168.10.32 ansible_user=agent0 ansible_become=yes
+
+[cx_test_servers]
+cx-test ansible_host=192.168.10.33 ansible_user=agent0 ansible_become=yes
+
+[cx_metric_servers]
+cx-metric ansible_host=192.168.10.34 ansible_user=agent0 ansible_become=yes
+
+[cx_dev_servers]
+cx-dev ansible_host=192.168.10.35 ansible_user=agent0 ansible_become=yes
+
+[cx_devops_servers]
+cx-devops ansible_host=192.168.10.36 ansible_user=agent0 ansible_become=yes
+
+# Group definitions for logical server roles
+[frontend_servers]
+cx-web
+
+[backend_servers]
+cx-api-gateway
+cx-llm-orchestration
+
+[data_servers]
+cx-database
+cx-vector-db
+
+[infrastructure_servers]
+cx-devops
+cx-metric
+
+[development_servers]
+cx-dev
+cx-test
+
+# All servers group
+[cx_infrastructure:children]
+cx_web_servers
+cx_api_servers
+cx_database_servers
+cx_vector_db_servers
+cx_llm_servers
+cx_test_servers
+cx_metric_servers
+cx_dev_servers
+cx_devops_servers
+
+# Global variables for all servers
+[cx_infrastructure:vars]
+ansible_python_interpreter=/usr/bin/python3
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+deployment_environment=cx_rnd_infrastructure
+project_name=citadel_ai_os
