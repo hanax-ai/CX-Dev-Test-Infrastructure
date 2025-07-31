@@ -3,9 +3,16 @@
 # Automated installation of embedding models on orchestration server
 
 - name: Deploy Embedding Models to CX Orchestration Server
-  hosts: orchestration
+  hosts: ai_servers
   become: yes
   gather_facts: yes
+  
+  tasks:
+    # Only run on cx-orc server
+    - name: Check if this is the orchestration server
+      fail:
+        msg: "This playbook should only run on the orchestration server (cx-orc)"
+      when: inventory_hostname != 'cx-orc'
   
   vars:
     deployment_timestamp: "{{ ansible_date_time.iso8601 }}"
