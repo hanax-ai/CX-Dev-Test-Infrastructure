@@ -1,0 +1,78 @@
+---
+# CX R&D Infrastructure Main Playbook
+# Manages all 9 servers in the AI Research & Development Platform
+
+- name: Configure DevOps Server
+  hosts: devops
+  become: yes
+  roles:
+    - common
+    - jenkins
+    - terraform
+    - ansible
+
+- name: Configure Development Environment
+  hosts: development
+  become: yes
+  roles:
+    - common
+    - python_env
+    - development_tools
+
+- name: Configure LLM & Orchestration Server
+  hosts: llm_orchestration
+  become: yes
+  roles:
+    - common
+    - python_env
+    - llm_runtime
+
+- name: Configure Database Server
+  hosts: database
+  become: yes
+  roles:
+    - common
+    - postgresql
+    - redis
+    - backup
+
+- name: Configure Vector Database Server
+  hosts: vector_db
+  become: yes
+  roles:
+    - common
+    - qdrant
+    - vector_optimization
+
+- name: Configure Web Server
+  hosts: web
+  become: yes
+  roles:
+    - common
+    - nginx
+    - ssl
+
+- name: Configure API Gateway Server
+  hosts: api_gateway
+  become: yes
+  roles:
+    - common
+    - api_gateway
+    - load_balancer
+
+- name: Configure Test Server
+  hosts: test
+  become: yes
+  roles:
+    - common
+    - python_env
+    - testing_tools
+
+- name: Configure Metrics & Monitoring Server
+  hosts: metrics
+  become: yes
+  roles:
+    - common
+    - prometheus
+    - grafana
+    - alerting
