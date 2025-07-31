@@ -13,7 +13,7 @@ param(
     [string]$Username = "agent0",
     
     [Parameter(Mandatory=$false)]
-    [switch]$Verbose
+    [switch]$VerboseOutput
 )
 
 # Configuration
@@ -26,7 +26,7 @@ $LogFile = Join-Path $LogDir "deployment_$Timestamp.log"
 $EmbeddingModels = @(
     @{ Name = "mxbai-embed-large"; Size = "334M"; Description = "Large embedding model for high-quality text representations" },
     @{ Name = "nomic-embed-text"; Size = "137M"; Description = "Efficient text embedding model" },
-    @{ Name = "all-minilm"; Size = "23M"; Description = "Lightweight embedding model for fast inference" }
+    @{ Name = "all-minilm:22m"; Size = "22M"; Description = "Lightweight embedding model for fast inference" }
 )
 
 # Create logs directory
@@ -82,7 +82,7 @@ function Invoke-SSHCommand {
     
     $SSHCommand = "ssh -o StrictHostKeyChecking=no $Username@$ServerIP `"$Command`""
     
-    if ($Verbose) {
+    if ($VerboseOutput) {
         Write-Log "Executing: $Command" "DEBUG"
     }
     
@@ -99,12 +99,30 @@ function Invoke-SSHCommand {
 function Install-EmbeddingModels {
     Write-Log "Starting embedding models installation..."
     
+    # Install Ollama if not present
+    Write-Log "Checking Ollama installation..."
+    $OllamaCheck = Invoke-SSHCommand "command -v ollama" -ReturnOutput
+    if ([string]::IsNullOrEmpty($OllamaCheck)) {
+        Write-Log "Installing Ollama..." "WARN"
+        Write-Host "Installing Ollama on server..." -ForegroundColor Yellow
+        $OllamaInstall = Invoke-SSHCommand "curl -fsSL https://ollama.com/install.sh | sh"
+        if ($OllamaInstall) {
+            Write-Log "Ollama installed successfully" "SUCCESS"
+        } else {
+            Write-Log "Failed to install Ollama" "ERROR"
+            return $false
+        }
+    } else {
+        Write-Log "Ollama already installed: $OllamaCheck"
+    }
+    
     # Check Ollama service status
     Write-Log "Checking Ollama service status..."
     $OllamaStatus = Invoke-SSHCommand "systemctl is-active ollama" -ReturnOutput
     if ($OllamaStatus -ne "active") {
         Write-Log "Starting Ollama service..." "WARN"
         Invoke-SSHCommand "sudo systemctl start ollama"
+        Invoke-SSHCommand "sudo systemctl enable ollama"
     }
     
     # Get current models

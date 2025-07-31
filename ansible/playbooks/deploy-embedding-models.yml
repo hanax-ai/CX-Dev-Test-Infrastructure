@@ -19,6 +19,13 @@
         create: yes
         mode: '0644'
         
+    - name: Install Ollama if not present
+      ansible.builtin.shell: |
+        if ! command -v ollama &> /dev/null; then
+          curl -fsSL https://ollama.com/install.sh | sh
+        fi
+      register: ollama_install
+      
     - name: Verify Ollama service status
       ansible.builtin.systemd:
         name: ollama

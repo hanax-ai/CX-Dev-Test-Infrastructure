@@ -8,7 +8,7 @@ Automated deployment of three embedding models to **hx-orc-server (192.168.10.31
 
 - **mxbai-embed-large** (334M parameters) - High-quality text representations
 - **nomic-embed-text** (137M parameters) - Efficient text embedding
-- **all-minilm** (23M parameters) - Lightweight, fast inference
+- **all-minilm:22m** (22M parameters) - Lightweight, fast inference
 
 ## Prerequisites
 
@@ -73,6 +73,26 @@ cd ansible\
 .\Deploy-EmbeddingModels.ps1 -ServerIP "192.168.10.31" -Username "agent0"
 ```
 
+### Option 3: Manual Installation (SSH)
+
+If you prefer to install manually via SSH:
+
+```bash
+# Connect to orchestration server
+ssh agent0@192.168.10.31
+
+# Install Ollama (if not already installed)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Install embedding models
+ollama pull mxbai-embed-large
+ollama pull nomic-embed-text
+ollama pull all-minilm:22m
+
+# Verify installation
+ollama list
+```
+
 ## What Gets Deployed
 
 ### Models Installed
@@ -86,12 +106,13 @@ cd ansible\
    - Purpose: Balanced performance and efficiency
    - Use case: General-purpose text embedding
 
-3. **all-minilm**
-   - Size: 23M parameters
+3. **all-minilm:22m**
+   - Size: 22M parameters
    - Purpose: Fast, lightweight embeddings
    - Use case: Real-time applications, high-throughput scenarios
 
 ### Configuration Applied
+- Ollama installed if not present (`curl -fsSL https://ollama.com/install.sh | sh`)
 - Models installed to `/opt/ai_models` on orchestration server
 - Ollama service configured for network access (`0.0.0.0:11434`)
 - GPU acceleration enabled (CUDA 12.9)
@@ -111,10 +132,10 @@ curl -X POST "http://192.168.10.31:11434/api/embeddings" \
   -H "Content-Type: application/json" \
   -d '{"model":"nomic-embed-text","prompt":"test embedding"}'
 
-# Test all-minilm
+# Test all-minilm:22m
 curl -X POST "http://192.168.10.31:11434/api/embeddings" \
   -H "Content-Type: application/json" \
-  -d '{"model":"all-minilm","prompt":"test embedding"}'
+  -d '{"model":"all-minilm:22m","prompt":"test embedding"}'
 ```
 
 ### Service Status
