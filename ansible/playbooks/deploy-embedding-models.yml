@@ -1,0 +1,175 @@
+---
+# CX Embedding Models Deployment Playbook
+# Automated installation of embedding models on orchestration server
+
+- name: Deploy Embedding Models to CX Orchestration Server
+  hosts: orchestration
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    deployment_timestamp: "{{ ansible_date_time.iso8601 }}"
+    log_file: "/var/log/cx-embedding-deployment.log"
+    
+  pre_tasks:
+    - name: Create deployment log
+      ansible.builtin.lineinfile:
+        path: "{{ log_file }}"
+        line: "=== CX Embedding Model Deployment Started: {{ deployment_timestamp }} ==="
+        create: yes
+        mode: '0644'
+        
+    - name: Verify Ollama service status
+      ansible.builtin.systemd:
+        name: ollama
+        state: started
+        enabled: yes
+      register: ollama_status
+      
+    - name: Check available disk space
+      ansible.builtin.shell: df -h {{ model_storage_path }}
+      register: disk_space
+      
+    - name: Log disk space
+      ansible.builtin.lineinfile:
+        path: "{{ log_file }}"
+        line: "Available disk space: {{ disk_space.stdout }}"
+
+  tasks:
+    - name: Verify CUDA availability
+      ansible.builtin.shell: nvidia-smi
+      register: cuda_check
+      failed_when: cuda_check.rc != 0
+      
+    - name: Log CUDA status
+      ansible.builtin.lineinfile:
+        path: "{{ log_file }}"
+        line: "CUDA Status: Available"
+        
+    - name: Check current Ollama models
+      ansible.builtin.shell: ollama list
+      register: current_models
+      become_user: agent0
+      
+    - name: Log current models
+      ansible.builtin.lineinfile:
+        path: "{{ log_file }}"
+        line: "Current models before deployment: {{ current_models.stdout }}"
+
+    - name: Install mxbai-embed-large model
+      ansible.builtin.shell: |
+        ollama pull mxbai-embed-large
+      become_user: agent0
+      register: mxbai_install
+      retries: 3
+      delay: 30
+      until: mxbai_install.rc == 0
+      
+    - name: Install nomic-embed-text model  
+      ansible.builtin.shell: |
+        ollama pull nomic-embed-text
+      become_user: agent0
+      register: nomic_install
+      retries: 3
+      delay: 30
+      until: nomic_install.rc == 0
+      
+    - name: Install all-minilm model
+      ansible.builtin.shell: |
+        ollama pull all-minilm
+      become_user: agent0
+      register: minilm_install
+      retries: 3
+      delay: 30
+      until: minilm_install.rc == 0
+
+    - name: Verify model installations
+      ansible.builtin.shell: ollama list
+      register: installed_models
+      become_user: agent0
+      
+    - name: Test mxbai-embed-large functionality
+      ansible.builtin.uri:
+        url: "http://localhost:{{ ollama_port }}/api/embeddings"
+        method: POST
+        body_format: json
+        body:
+          model: "mxbai-embed-large"
+          prompt: "test embedding functionality"
+        status_code: 200
+      register: mxbai_test
+      
+    - name: Test nomic-embed-text functionality
+      ansible.builtin.uri:
+        url: "http://localhost:{{ ollama_port }}/api/embeddings"
+        method: POST
+        body_format: json
+        body:
+          model: "nomic-embed-text"
+          prompt: "test embedding functionality"
+        status_code: 200
+      register: nomic_test
+      
+    - name: Test all-minilm functionality
+      ansible.builtin.uri:
+        url: "http://localhost:{{ ollama_port }}/api/embeddings"
+        method: POST
+        body_format: json
+        body:
+          model: "all-minilm"
+          prompt: "test embedding functionality"
+        status_code: 200
+      register: minilm_test
+
+    - name: Verify network accessibility
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ ollama_port }}/api/embeddings"
+        method: POST
+        body_format: json
+        body:
+          model: "mxbai-embed-large"
+          prompt: "remote test"
+        status_code: 200
+      delegate_to: localhost
+      register: remote_test
+
+  post_tasks:
+    - name: Log deployment results
+      ansible.builtin.lineinfile:
+        path: "{{ log_file }}"
+        line: |
+          === Deployment Results ===
+          mxbai-embed-large: {{ 'SUCCESS' if mxbai_install.rc == 0 else 'FAILED' }}
+          nomic-embed-text: {{ 'SUCCESS' if nomic_install.rc == 0 else 'FAILED' }}
+          all-minilm: {{ 'SUCCESS' if minilm_install.rc == 0 else 'FAILED' }}
+          Local API Test: {{ 'SUCCESS' if mxbai_test.status == 200 else 'FAILED' }}
+          Remote API Test: {{ 'SUCCESS' if remote_test.status == 200 else 'FAILED' }}
+          Final model list: {{ installed_models.stdout }}
+          === Deployment Completed: {{ ansible_date_time.iso8601 }} ===
+          
+    - name: Display deployment summary
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          CX Embedding Models Deployment Summary
+          ========================================
+          Server: {{ inventory_hostname }} ({{ ansible_host }})
+          Models Installed:
+          - mxbai-embed-large (334M): {{ 'SUCCESS' if mxbai_install.rc == 0 else 'FAILED' }}
+          - nomic-embed-text (137M): {{ 'SUCCESS' if nomic_install.rc == 0 else 'FAILED' }}
+          - all-minilm (23M): {{ 'SUCCESS' if minilm_install.rc == 0 else 'FAILED' }}
+          
+          API Endpoints:
+          - Local: http://localhost:{{ ollama_port }}/api/embeddings
+          - Network: http://{{ ansible_host }}:{{ ollama_port }}/api/embeddings
+          
+          Storage Location: {{ model_storage_path }}
+          Log File: {{ log_file }}
+          ========================================
+
+  handlers:
+    - name: restart ollama
+      ansible.builtin.systemd:
+        name: ollama
+        state: restarted
+      listen: "restart ollama service"
