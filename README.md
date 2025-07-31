@@ -36,12 +36,24 @@ source /opt/citadel/env/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Configure infrastructure
-./scripts/setup-infrastructure.sh
+# Install DevOps tools (Jenkins, Terraform, Ansible, Azure DevOps Agent)
+./scripts/install-jenkins.sh
+./scripts/install-terraform.sh
+./scripts/install-ansible.sh
+./scripts/install-azure-devops-agent.sh
 
 # Verify installation
 ./scripts/health-check.sh
 ```
+
+### Infrastructure as Code
+
+This repository provides complete Infrastructure as Code (IaC) capabilities using:
+
+- **Terraform** - Infrastructure provisioning and state management
+- **Ansible** - Configuration management across all 9 servers
+- **Jenkins** - CI/CD pipeline automation
+- **Azure DevOps** - Cloud-native pipeline integration
 
 ---
 
@@ -115,6 +127,129 @@ CX R&D Network (192.168.10.0/24)
 - **Visualization:** Grafana (latest)
 - **Alerting:** Alertmanager (latest)
 - **CI/CD:** Azure DevOps + GitHub integration
+
+---
+
+## 🛠️ Installation Scripts
+
+The repository includes comprehensive installation scripts for setting up the complete DevOps infrastructure:
+
+### Core DevOps Tools
+
+| Script | Size | Purpose | Status |
+|--------|------|---------|--------|
+| **`install-jenkins.sh`** | 922 bytes | Jenkins CI/CD Server (v2.516.1 LTS) | ✅ Production Ready |
+| **`install-terraform.sh`** | 546 bytes | Infrastructure as Code (v1.12.2) | ✅ Production Ready |
+| **`install-ansible.sh`** | 260 bytes | Configuration Management (v11.8.0) | ✅ Production Ready |
+| **`install-azure-devops-agent.sh`** | 2543 bytes | Azure DevOps Agent (v4.258.1) | ✅ Production Ready |
+| **`health-check.sh`** | Enhanced | Infrastructure Health Monitoring | ✅ Production Ready |
+
+### Usage
+
+```bash
+# Install all DevOps tools
+cd /opt/CX-Dev-Test-Infrastructure
+./scripts/install-jenkins.sh        # Jenkins on port 8080
+./scripts/install-terraform.sh      # Terraform CLI tool
+./scripts/install-ansible.sh        # Ansible with 9-server inventory
+./scripts/install-azure-devops-agent.sh  # Azure DevOps integration
+
+# Run health checks
+./scripts/health-check.sh           # Comprehensive infrastructure monitoring
+```
+
+### Requirements
+
+```bash
+# Install Python dependencies
+pip install -r requirements.txt     # Production dependencies
+pip install -r requirements-dev.txt # Development dependencies
+```
+
+---
+
+## ⚙️ Configuration Management
+
+### Repository Structure
+
+```text
+/opt/CX-Dev-Test-Infrastructure/
+├── configs/
+│   ├── ansible/
+│   │   ├── inventory.yml           # YAML-based server inventory (2047 bytes)
+│   │   ├── inventory/hosts         # Static inventory file
+│   │   └── site.yml               # Main Ansible playbook (1287 bytes)
+│   ├── terraform/
+│   │   ├── main.tf                # Infrastructure definitions
+│   │   ├── templates/             # Dynamic configuration templates
+│   │   └── server-configs/        # Generated server configurations
+│   └── jenkins/
+│       ├── Jenkinsfile            # Declarative CI/CD pipeline
+│       └── pipeline-config.yml    # Pipeline configuration
+├── scripts/                       # Installation and utility scripts
+├── CX-Documents/                  # Documentation and status reports
+│   └── CX-Status/                 # Server status documentation
+├── requirements.txt               # Python production dependencies
+└── requirements-dev.txt           # Python development dependencies
+```
+
+### Ansible Configuration
+
+**9-Server Infrastructure Management:**
+
+```yaml
+# inventory.yml - Manages all CX R&D Infrastructure servers
+cx_infrastructure:
+  children:
+    frontend_servers:    # Web interfaces
+    backend_servers:     # API and processing
+    data_servers:        # Database and storage
+    infrastructure_servers: # DevOps and monitoring
+    development_servers: # Development and testing
+```
+
+**Managed Servers:**
+- **CX-Web** (192.168.10.28) - Web Server
+- **CX-API Gateway** (192.168.10.29) - API Gateway
+- **CX-Database** (192.168.10.30) - Database Server
+- **CX-Vector Database** (192.168.10.31) - Vector Database
+- **CX-LLM Orchestration** (192.168.10.32) - LLM/Orchestration
+- **CX-Test** (192.168.10.33) - Test Server
+- **CX-Metric** (192.168.10.34) - Metrics Server
+- **CX-Dev** (192.168.10.35) - Development Server
+- **CX-DevOps** (192.168.10.36) - DevOps Server
+
+### Terraform Infrastructure as Code
+
+**Features:**
+- Dynamic server configuration generation
+- Automated Ansible inventory creation
+- Health check script generation
+- Infrastructure state management
+- Deployment metadata tracking
+
+**Usage:**
+```bash
+cd configs/terraform
+terraform init
+terraform plan
+terraform apply
+```
+
+### Jenkins CI/CD Pipeline
+
+**Automated Workflows:**
+- Infrastructure deployment validation
+- Ansible playbook execution
+- Health check automation
+- Deployment reporting
+- Azure DevOps integration
+
+**Pipeline Triggers:**
+- Daily deployment checks (2 AM)
+- Git repository changes (every 15 minutes)
+- Manual deployment triggers
+- Health monitoring (every 15 minutes)
 
 ---
 
