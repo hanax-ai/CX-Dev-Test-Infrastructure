@@ -97,12 +97,12 @@ all:
     ai_servers:
       hosts:
         hx-llm-server-01:
-          ansible_host: 192.168.10.28
+          ansible_host: 192.168.10.29
           server_role: llm_chat
           target_models: ["llama3-chat", "nous-hermes-2"]
           gpu_enabled: true
         hx-llm-server-02:
-          ansible_host: 192.168.10.29
+          ansible_host: 192.168.10.28
           server_role: llm_instruct
           target_models: ["llama3-instruct", "qwen-coder"]
           gpu_enabled: true

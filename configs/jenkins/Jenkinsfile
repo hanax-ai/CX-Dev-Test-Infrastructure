@@ -94,6 +94,31 @@ pipeline {
             }
         }
         
+        stage('Phase 4: Deploy AI Processing Tier') {
+            when {
+                anyOf {
+                    branch 'main'
+                    expression { params.FORCE_DEPLOY == true }
+                }
+            }
+            steps {
+                echo '🤖 Deploying AI Processing Tier - Phase 4...'
+                dir('ansible') {
+                    sh '''
+                        source ${PYTHON_VENV}/bin/activate
+                        echo "Deploying Orchestration Server (192.168.10.31)..."
+                        ansible-playbook -i inventory/hosts.yml ../configs/ansible/deploy-orchestration-server.yml
+                        
+                        echo "Deploying LLM Server 01 - Chat (192.168.10.29)..."
+                        ansible-playbook -i inventory/hosts.yml ../configs/ansible/deploy-llm-server-01.yml
+                        
+                        echo "Deploying LLM Server 02 - Instruct (192.168.10.28)..."
+                        ansible-playbook -i inventory/hosts.yml ../configs/ansible/deploy-llm-server-02.yml
+                    '''
+                }
+            }
+        }
+        
         stage('Health Check') {
             steps {
                 echo '🏥 Running infrastructure health checks...'
