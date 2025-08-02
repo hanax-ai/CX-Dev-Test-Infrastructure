@@ -1,0 +1,13 @@
+[Unit]
+Description=Citadel API Gateway Service
+After=network.target
+
+[Service]
+User=agent0
+Group=agent0
+WorkingDirectory=/opt/gateway/app
+ExecStart=/opt/gateway/env/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

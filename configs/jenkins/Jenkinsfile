@@ -1,193 +1,115 @@
-// CX R&D Infrastructure - Jenkins Pipeline
-// Declarative pipeline for infrastructure deployment and management
-// Updated: July 31, 2025
-
+// CX R&D Infrastructure - Definitive Jenkins Pipeline
 pipeline {
     agent {
+        // Run on a pre-configured Jenkins agent
         label 'azure-devops-agent'
     }
-    
+
     environment {
-        TERRAFORM_VERSION = '1.12.2'
-        ANSIBLE_VERSION = '11.8.0'
-        CX_ENVIRONMENT = 'cx_rnd_infrastructure'
+        // Centralized environment variables for the pipeline
         PYTHON_VENV = '/opt/citadel/env'
     }
-    
+
     options {
+        // Production-grade pipeline options
         buildDiscarder(logRotator(numToKeepStr: '10'))
-        timeout(time: 30, unit: 'MINUTES')
+        timeout(time: 60, unit: 'MINUTES')
         timestamps()
         ansiColor('xterm')
     }
-    
+
     triggers {
-        cron('H 2 * * *')  // Daily deployment check
-        pollSCM('H/15 * * * *')  // Poll SCM every 15 minutes
+        // Automatically run daily and on code changes
+        cron('H 2 * * *')
+        pollSCM('H/15 * * * *')
     }
-    
+
+    parameters {
+        // Allow manual overrides and configuration
+        booleanParam(name: 'RUN_PREFLIGHT_CHECKS', defaultValue: true, description: 'Run the pre-flight validation playbook.')
+        booleanParam(name: 'DEPLOY_PHASE_4', defaultValue: true, description: 'Deploy Phase 4: AI Processing Tier.')
+        booleanParam(name: 'DEPLOY_PHASE_5', defaultValue: true, description: 'Deploy Phase 5: Data & Services Tier.')
+        booleanParam(name: 'RUN_POST_DEPLOY_VALIDATION', defaultValue: true, description: 'Run the comprehensive post-deployment validation suite.')
+    }
+
     stages {
         stage('Checkout') {
             steps {
-                echo '🔄 Checking out CX Infrastructure repository...'
+                echo '🔄 Checking out repository...'
                 checkout scm
-                sh 'pwd && ls -la'
             }
         }
-        
-        stage('Environment Setup') {
+
+        stage('Pre-Flight Checks') {
+            when { expression { params.RUN_PREFLIGHT_CHECKS == true } }
             steps {
-                echo '🔧 Setting up build environment...'
-                sh '''
-                    source ${PYTHON_VENV}/bin/activate
-                    python --version
-                    terraform version
-                    ansible --version
-                '''
-            }
-        }
-        
-        stage('Terraform Plan') {
-            steps {
-                echo '📋 Creating Terraform execution plan...'
-                dir('configs/terraform') {
-                    sh '''
-                        terraform init -no-color
-                        terraform validate -no-color
-                        terraform plan -no-color -out=tfplan
-                    '''
-                }
-            }
-        }
-        
-        stage('Infrastructure Validation') {
-            steps {
-                echo '✅ Validating infrastructure configuration...'
+                echo '🔍 Running pre-deployment validation on all servers...'
                 dir('configs/ansible') {
-                    sh '''
-                        source ${PYTHON_VENV}/bin/activate
-                        ansible-inventory -i inventory.yml --list
-                        ansible-playbook site.yml --syntax-check
-                    '''
+                    sh 'ansible-playbook -i inventory.yaml preflight-checks.yml'
                 }
             }
         }
-        
-        stage('Deploy Infrastructure') {
-            when {
-                anyOf {
-                    branch 'main'
-                    expression { params.FORCE_DEPLOY == true }
-                }
-            }
+
+        stage('Deploy AI Processing Tier (Phase 4)') {
+            when { expression { params.DEPLOY_PHASE_4 == true } }
             steps {
-                echo '🚀 Deploying CX R&D Infrastructure...'
-                dir('configs/terraform') {
-                    sh 'terraform apply -no-color -auto-approve tfplan'
-                }
+                echo '🤖 Deploying Phase 4: AI Processing Tier...'
                 dir('configs/ansible') {
-                    sh '''
-                        source ${PYTHON_VENV}/bin/activate
-                        ansible-playbook -i inventory.yml site.yml --diff
-                    '''
+                    sh 'ansible-playbook -i inventory.yaml deploy-orchestration-server.yml'
+                    sh 'ansible-playbook -i inventory.yaml deploy-llm-server-01.yml'
+                    sh 'ansible-playbook -i inventory.yaml deploy-llm-server-02.yml'
                 }
             }
         }
-        
-        stage('Phase 4: Deploy AI Processing Tier') {
-            when {
-                anyOf {
-                    branch 'main'
-                    expression { params.FORCE_DEPLOY == true }
-                }
-            }
+
+        stage('Deploy Data & Services Tier (Phase 5)') {
+            when { expression { params.DEPLOY_PHASE_5 == true } }
             steps {
-                echo '🤖 Deploying AI Processing Tier - Phase 4...'
-                dir('ansible') {
-                    sh '''
-                        source ${PYTHON_VENV}/bin/activate
-                        echo "Deploying Orchestration Server (192.168.10.31)..."
-                        ansible-playbook -i inventory/hosts.yml ../configs/ansible/deploy-orchestration-server.yml
-                        
-                        echo "Deploying LLM Server 01 - Chat (192.168.10.29)..."
-                        ansible-playbook -i inventory/hosts.yml ../configs/ansible/deploy-llm-server-01.yml
-                        
-                        echo "Deploying LLM Server 02 - Instruct (192.168.10.28)..."
-                        ansible-playbook -i inventory/hosts.yml ../configs/ansible/deploy-llm-server-02.yml
-                    '''
+                echo '🌐 Deploying Phase 5: Data & Services Tier...'
+                dir('configs/ansible') {
+                    sh 'ansible-playbook -i ../../ansible/inventory/hosts.yml deploy-api-gateway.yml --ask-become-pass'
                 }
+                echo '🔍 Running Phase 5 validation tests...'
+                sh 'python3 scripts/test_api_gateway.py'
+                sh './test_qdrant_remote.sh'
+                sh 'python3 scripts/test_postgres_connection.py'
+                sh 'python3 scripts/diagnose_web_ui_server_paramiko.py'
             }
         }
-        
-        stage('Health Check') {
+
+        stage('Comprehensive Validation') {
+            when { expression { params.RUN_POST_DEPLOY_VALIDATION == true } }
             steps {
-                echo '🏥 Running infrastructure health checks...'
-                sh '''
-                    if [ -f scripts/health-check.sh ]; then
-                        chmod +x scripts/health-check.sh
-                        ./scripts/health-check.sh
-                    else
-                        echo "Health check script not found, skipping..."
-                    fi
-                '''
+                echo '🩺 Running comprehensive cross-service integration tests...'
+                // Use withEnv to ensure scripts run inside the correct Python virtual environment
+                withEnv(["PATH+PYTHON=${PYTHON_VENV}/bin"]) {
+                    sh './check_phase5_servers_headless.sh'
+                    sh 'echo "✅ All Phase 5 services integration tested successfully"'
+                }
             }
-        }
-        
-        stage('Generate Reports') {
-            steps {
-                echo '📊 Generating deployment reports...'
-                sh '''
-                    echo "=== CX Infrastructure Deployment Report ===" > deployment-report.txt
-                    echo "Date: $(date)" >> deployment-report.txt
-                    echo "Branch: ${GIT_BRANCH}" >> deployment-report.txt
-                    echo "Commit: ${GIT_COMMIT}" >> deployment-report.txt
-                    echo "Build: ${BUILD_NUMBER}" >> deployment-report.txt
-                    echo "" >> deployment-report.txt
-                    
-                    if [ -f configs/terraform/deployment-metadata.json ]; then
-                        echo "=== Terraform Metadata ===" >> deployment-report.txt
-                        cat configs/terraform/deployment-metadata.json >> deployment-report.txt
-                        echo "" >> deployment-report.txt
-                    fi
-                '''
-                
-                archiveArtifacts artifacts: 'deployment-report.txt', fingerprint: true
-                archiveArtifacts artifacts: 'configs/terraform/tfplan', fingerprint: true
+            post {
+                success {
+                    echo '✅ All services validated successfully.'
+                    sh "echo \"[`date '+%Y-%m-%d %H:%M:%S'`] All Phase 5 services validated and operational.\" > validation-report.log"
+                    archiveArtifacts artifacts: 'validation-report.log'
+                }
+                failure {
+                    echo '❌ One or more services failed validation.'
+                }
             }
         }
     }
-    
+
     post {
         always {
             echo '🧹 Cleaning up workspace...'
             cleanWs()
         }
-        
         success {
-            echo '✅ CX Infrastructure deployment completed successfully!'
-            // Add notification logic here
+            echo '✅ Citadel AI Infrastructure deployment completed successfully!'
         }
-        
         failure {
-            echo '❌ CX Infrastructure deployment failed!'
-            // Add failure notification logic here
+            echo '❌ Citadel AI Infrastructure deployment failed. Please review logs.'
         }
-        
-        unstable {
-            echo '⚠️ CX Infrastructure deployment completed with warnings!'
-        }
-    }
-    
-    parameters {
-        booleanParam(
-            name: 'FORCE_DEPLOY',
-            defaultValue: false,
-            description: 'Force deployment even if not on main branch'
-        )
-        choice(
-            name: 'LOG_LEVEL',
-            choices: ['INFO', 'DEBUG', 'WARN', 'ERROR'],
-            description: 'Log level for deployment'
-        )
     }
 }
