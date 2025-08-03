@@ -1,0 +1,51 @@
+---
+# Vector Database Role - CX-Vector Database Server (.30)
+# Manages Qdrant vector database for RAG pipeline
+
+# Qdrant Configuration
+qdrant_version: "1.8.0"
+qdrant_port: 6333
+qdrant_grpc_port: 6334
+qdrant_web_ui_port: 6333
+
+# Storage Configuration
+qdrant_storage_path: "/var/lib/qdrant"
+qdrant_snapshots_path: "/var/lib/qdrant/snapshots"
+qdrant_max_segment_size: "100mb"
+
+# Performance Settings
+qdrant_max_payload_size: "10mb"
+qdrant_indexing_threshold: 20000
+qdrant_parallel_shards: 2
+qdrant_max_search_threads: 4
+
+# Security Settings
+qdrant_api_key: "{{ vault_qdrant_api_key | default('qdrant_api_key_change_me') }}"
+enable_cors: true
+allowed_origins: 
+  - "http://192.168.10.38:3000"  # CX-Web Server
+  - "http://192.168.10.39:8000"  # CX-API Gateway
+
+# Collections Configuration
+vector_collections:
+  - name: "citadel_documents"
+    vector_size: 1536  # OpenAI embedding size
+    distance: "Cosine"
+    description: "Document embeddings for RAG pipeline"
+  - name: "citadel_conversations"
+    vector_size: 1536
+    distance: "Cosine" 
+    description: "Conversation history embeddings"
+  - name: "citadel_knowledge_base"
+    vector_size: 1536
+    distance: "Cosine"
+    description: "Knowledge base embeddings"
+
+# Backup Configuration
+backup_enabled: true
+backup_schedule: "0 3 * * *"  # Daily at 3 AM
+backup_retention_days: 14
+
+# Monitoring
+metrics_enabled: true
+log_level: "INFO"

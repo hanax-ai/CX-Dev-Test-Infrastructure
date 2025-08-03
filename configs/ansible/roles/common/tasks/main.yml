@@ -1,0 +1,71 @@
+---
+# Common tasks for all CX R&D Infrastructure servers
+# Ensures base system configuration and security
+
+- name: Update apt package cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  become: yes
+
+- name: Upgrade all packages to latest version
+  apt:
+    upgrade: safe
+  become: yes
+
+- name: Install essential system packages
+  apt:
+    name:
+      - curl
+      - wget
+      - git
+      - vim
+      - htop
+      - tree
+      - unzip
+      - software-properties-common
+      - apt-transport-https
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - build-essential
+    state: present
+  become: yes
+
+- name: Create agent0 user with sudo privileges
+  user:
+    name: agent0
+    shell: /bin/bash
+    create_home: yes
+    groups: sudo
+    append: yes
+  become: yes
+
+- name: Set up authorized keys for agent0
+  authorized_key:
+    user: agent0
+    key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+    state: present
+  become: yes
+
+- name: Configure UFW firewall (initially disabled for setup)
+  ufw:
+    state: disabled
+  become: yes
+
+- name: Set timezone to UTC
+  timezone:
+    name: UTC
+  become: yes
+
+- name: Configure hostname
+  hostname:
+    name: "{{ inventory_hostname }}"
+  become: yes
+
+- name: Update /etc/hosts with server information
+  lineinfile:
+    path: /etc/hosts
+    line: "{{ ansible_host }} {{ inventory_hostname }}"
+    state: present
+  become: yes

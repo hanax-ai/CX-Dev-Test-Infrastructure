@@ -1,0 +1,155 @@
+---
+- name: Deploy LLM Server 02 - Simplified Approach
+  hosts: hx-llm-server-02
+  gather_facts: yes
+  become: yes
+  vars:
+    model_dir: "/opt/ai_models"
+
+  tasks:
+    - name: 1. Check current GPU status
+      shell: nvidia-smi --list-gpus
+      register: gpu_list
+      changed_when: false
+
+    - name: 2. Display GPU status
+      debug:
+        msg:
+          - "GPU Detection:"
+          - "{{ gpu_list.stdout_lines }}"
+
+    - name: 3. Check CUDA driver
+      shell: cat /proc/driver/nvidia/version
+      register: nvidia_driver
+      changed_when: false
+      failed_when: false
+
+    - name: 4. Display CUDA driver info
+      debug:
+        msg:
+          - "NVIDIA Driver:"
+          - "{{ nvidia_driver.stdout_lines if nvidia_driver.rc == 0 else 'Driver not found' }}"
+
+    - name: 5. Check if Ollama is already installed
+      shell: which ollama
+      register: ollama_exists
+      changed_when: false
+      failed_when: false
+
+    - name: 6. Stop existing Ollama service if running
+      systemd:
+        name: ollama
+        state: stopped
+      failed_when: false
+      when: ollama_exists.rc == 0
+
+    - name: 7. Install/Reinstall Ollama
+      shell: curl -fsSL https://ollama.com/install.sh | sh
+      register: ollama_install
+
+    - name: 8. Create simple service configuration
+      copy:
+        content: |
+          [Unit]
+          Description=Ollama Service
+          After=network-online.target
+          
+          [Service]
+          ExecStart=/usr/local/bin/ollama serve
+          User=ollama
+          Group=ollama
+          Restart=always
+          RestartSec=3
+          Environment="OLLAMA_HOST=0.0.0.0:11434"
+          Environment="OLLAMA_ORIGINS=*"
+          
+          [Install]
+          WantedBy=default.target
+        dest: /etc/systemd/system/ollama.service
+        backup: yes
+
+    - name: 9. Create AI models directory
+      file:
+        path: "{{ model_dir }}"
+        state: directory
+        owner: agent0
+        group: agent0
+        mode: '0755'
+
+    - name: 10. Reload systemd and start Ollama
+      systemd:
+        name: ollama
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: 11. Wait for service to be ready
+      wait_for:
+        port: 11434
+        host: 0.0.0.0
+        delay: 5
+        timeout: 30
+
+    - name: 12. Test basic API connectivity
+      uri:
+        url: "http://{{ ansible_default_ipv4.address }}:11434/api/tags"
+        method: GET
+        timeout: 10
+      register: api_test
+
+    - name: 13. Display API test result
+      debug:
+        msg:
+          - "API Test Result:"
+          - "Status: {{ api_test.status }}"
+          - "Service is {{ 'WORKING' if api_test.status == 200 else 'FAILED' }}"
+
+    - name: 14. List current models
+      uri:
+        url: "http://{{ ansible_default_ipv4.address }}:11434/api/tags"
+        method: GET
+      register: current_models
+
+    - name: 15. Display current models
+      debug:
+        msg:
+          - "Current Models:"
+          - "{{ current_models.json.models if current_models.json is defined and current_models.json.models is defined else 'No models found' }}"
+
+    - name: 16. Check service status
+      shell: systemctl status ollama --no-pager
+      register: service_status
+      changed_when: false
+
+    - name: 17. Display service status
+      debug:
+        msg:
+          - "Service Status:"
+          - "{{ service_status.stdout_lines }}"
+
+    - name: 18. Display next steps
+      debug:
+        msg:
+          - "============================================================="
+          - " BASIC OLLAMA SERVICE DEPLOYMENT COMPLETE"
+          - "============================================================="
+          - "🚀 SERVICE STATUS:"
+          - "  API Endpoint: http://{{ ansible_default_ipv4.address }}:11434"
+          - "  Status: {{ 'RUNNING' if api_test.status == 200 else 'FAILED' }}"
+          - ""
+          - "📋 NEXT STEPS TO COMPLETE MANUALLY:"
+          - "  1. SSH to server: ssh agent0@{{ ansible_default_ipv4.address }}"
+          - "  2. Remove unwanted model: ollama rm llama3.2:3b"
+          - "  3. Test existing models:"
+          - "     ollama run qwen3:8b"
+          - "     ollama run mistral:7b"
+          - "     ollama run nous-hermes2:latest"
+          - "     ollama run llama4:16x17b"
+          - "  4. Check GPU usage: nvidia-smi"
+          - "  5. Check service logs: journalctl -u ollama -f"
+          - ""
+          - "🔧 IF ISSUES PERSIST:"
+          - "  • Check CUDA: nvidia-smi"
+          - "  • Check driver: cat /proc/driver/nvidia/version"
+          - "  • Restart service: sudo systemctl restart ollama"
+          - "============================================================="

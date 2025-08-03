@@ -1,0 +1,244 @@
+---
+- name: Install PostgreSQL and Redis
+  block:
+    - name: Add PostgreSQL official repository key
+      apt_key:
+        url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+        state: present
+
+    - name: Add PostgreSQL official repository
+      apt_repository:
+        repo: "deb http://apt.postgresql.org/pub/repos/apt/ {{ ansible_distribution_release }}-pgdg main"
+        state: present
+
+    - name: Install PostgreSQL packages
+      apt:
+        name:
+          - "postgresql-{{ postgresql_version }}"
+          - "postgresql-client-{{ postgresql_version }}"
+          - "postgresql-contrib-{{ postgresql_version }}"
+          - python3-psycopg2
+        state: present
+        update_cache: yes
+
+    - name: Install Redis
+      apt:
+        name:
+          - redis-server
+          - redis-tools
+        state: present
+
+- name: Configure PostgreSQL
+  block:
+    - name: Configure PostgreSQL settings
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        regexp: "^#?{{ item.key }}"
+        line: "{{ item.key }} = {{ item.value }}"
+        backup: yes
+      loop:
+        - { key: "listen_addresses", value: "'*'" }
+        - { key: "port", value: "{{ postgresql_port }}" }
+        - { key: "max_connections", value: "{{ postgresql_max_connections }}" }
+        - { key: "shared_buffers", value: "'{{ postgresql_shared_buffers }}'" }
+        - { key: "effective_cache_size", value: "'{{ postgresql_effective_cache_size }}'" }
+        - { key: "work_mem", value: "'{{ postgresql_work_mem }}'" }
+        - { key: "maintenance_work_mem", value: "'{{ postgresql_maintenance_work_mem }}'" }
+        - { key: "wal_buffers", value: "16MB" }
+        - { key: "checkpoint_completion_target", value: "0.9" }
+        - { key: "default_statistics_target", value: "100" }
+        - { key: "log_destination", value: "'stderr'" }
+        - { key: "logging_collector", value: "on" }
+        - { key: "log_directory", value: "'log'" }
+        - { key: "log_filename", value: "'postgresql-%Y-%m-%d_%H%M%S.log'" }
+        - { key: "log_statement", value: "'all'" }
+      notify: restart postgresql
+
+    - name: Configure PostgreSQL client authentication
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
+        line: "host    all             all             192.168.10.0/24         md5"
+        insertbefore: "^# IPv4 local connections:"
+        backup: yes
+      notify: restart postgresql
+
+    - name: Start and enable PostgreSQL
+      systemd:
+        name: postgresql
+        state: started
+        enabled: yes
+
+- name: Configure Redis
+  block:
+    - name: Configure Redis settings
+      lineinfile:
+        path: /etc/redis/redis.conf
+        regexp: "^#?{{ item.key }}"
+        line: "{{ item.key }} {{ item.value }}"
+        backup: yes
+      loop:
+        - { key: "bind", value: "127.0.0.1 192.168.10.35" }
+        - { key: "port", value: "{{ redis_port }}" }
+        - { key: "maxmemory", value: "{{ redis_maxmemory }}" }
+        - { key: "maxmemory-policy", value: "{{ redis_maxmemory_policy }}" }
+        - { key: "save", value: "{{ redis_save_config }}" }
+        - { key: "appendonly", value: "yes" }
+        - { key: "appendfsync", value: "everysec" }
+      notify: restart redis
+
+    - name: Start and enable Redis
+      systemd:
+        name: redis-server
+        state: started
+        enabled: yes
+
+- name: Create databases and users
+  block:
+    - name: Create PostgreSQL databases
+      postgresql_db:
+        name: "{{ item.name }}"
+        owner: "{{ item.owner }}"
+        state: present
+      loop: "{{ databases }}"
+      become_user: postgres
+
+    - name: Create PostgreSQL users
+      postgresql_user:
+        name: "{{ item.name }}"
+        password: "{{ item.password }}"
+        priv: "{{ item.priv }}"
+        state: present
+      loop: "{{ database_users }}"
+      become_user: postgres
+
+- name: Setup database backup system
+  block:
+    - name: Create backup directory
+      file:
+        path: /var/backups/postgresql
+        state: directory
+        owner: postgres
+        group: postgres
+        mode: '0750'
+
+    - name: Create backup script
+      template:
+        src: postgres_backup.sh.j2
+        dest: /usr/local/bin/postgres_backup.sh
+        owner: postgres
+        group: postgres
+        mode: '0750'
+
+    - name: Setup backup cron job
+      cron:
+        name: "PostgreSQL backup"
+        cron_file: postgresql_backup
+        user: postgres
+        minute: "0"
+        hour: "2"
+        job: "/usr/local/bin/postgres_backup.sh"
+        state: "{{ 'present' if backup_enabled else 'absent' }}"
+
+- name: Configure database monitoring
+  block:
+    - name: Install monitoring tools
+      apt:
+        name:
+          - postgresql-contrib
+          - redis-tools
+        state: present
+
+    - name: Create monitoring user for PostgreSQL
+      postgresql_user:
+        name: citadel_monitor
+        password: "{{ vault_monitor_password | default('monitor123') }}"
+        role_attr_flags: LOGIN
+        priv: "pg_stat_database:SELECT"
+        state: present
+      become_user: postgres
+
+    - name: Create database health check script
+      template:
+        src: db_health_check.sh.j2
+        dest: /usr/local/bin/db_health_check.sh
+        owner: root
+        group: root
+        mode: '0755'
+
+- name: Optimize database performance
+  block:
+    - name: Create database indexes for RAG operations
+      postgresql_query:
+        db: citadel_rag
+        query: |
+          CREATE INDEX IF NOT EXISTS idx_embeddings_vector ON embeddings USING GIN(vector);
+          CREATE INDEX IF NOT EXISTS idx_documents_hash ON documents(content_hash);
+          CREATE INDEX IF NOT EXISTS idx_conversations_timestamp ON conversations(created_at);
+        become_user: postgres
+
+    - name: Configure Redis for session management
+      redis_key:
+        name: "config"
+        value: |
+          {
+            "session_timeout": 3600,
+            "max_sessions_per_user": 5,
+            "cleanup_interval": 300
+          }
+        host: 127.0.0.1
+        port: "{{ redis_port }}"
+
+- name: Database security hardening
+  block:
+    - name: Configure PostgreSQL SSL
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        regexp: "^#?ssl"
+        line: "ssl = on"
+        backup: yes
+      notify: restart postgresql
+
+    - name: Set proper file permissions
+      file:
+        path: "{{ item }}"
+        owner: postgres
+        group: postgres
+        mode: '0600'
+      loop:
+        - "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        - "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
+
+    - name: Configure Redis authentication
+      lineinfile:
+        path: /etc/redis/redis.conf
+        regexp: "^#?requirepass"
+        line: "requirepass {{ vault_redis_password | default('redis123') }}"
+        backup: yes
+      notify: restart redis
+
+- name: Final validation
+  block:
+    - name: Test PostgreSQL connection
+      postgresql_query:
+        db: postgres
+        query: "SELECT version();"
+      become_user: postgres
+      register: pg_version
+
+    - name: Test Redis connection
+      redis_key:
+        name: "test_key"
+        value: "test_value"
+        host: 127.0.0.1
+        port: "{{ redis_port }}"
+      register: redis_test
+
+    - name: Display database status
+      debug:
+        msg:
+          - "=== DATABASE OPTIMIZATION COMPLETE ==="
+          - "PostgreSQL Version: {{ pg_version.query_result[0][0] }}"
+          - "Redis Status: {{ 'OPERATIONAL' if redis_test.changed is defined else 'ERROR' }}"
+          - "Databases Created: {{ databases | length }}"
+          - "Users Created: {{ database_users | length }}"
+          - "Backup System: {{ 'ENABLED' if backup_enabled else 'DISABLED' }}"

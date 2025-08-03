@@ -1,0 +1,144 @@
+---
+- name: Pre-flight check for AI Processing Tier - V2 Final
+  hosts: ai_servers
+  gather_facts: yes
+  vars:
+    miniconda_path: "/home/agent0/miniconda3"
+    model_dir: "/opt/ai_models"
+    ollama_service_file: "/etc/systemd/system/ollama.service"
+    llm_env_name: "llm_env"
+
+  tasks:
+    - name: 1. Check for NVIDIA Driver
+      shell: "nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n 1"
+      register: nvidia_driver_check
+      changed_when: false
+      failed_when: false
+
+    - name: 2. Check for CUDA Version
+      shell: "source /etc/profile.d/cuda.sh 2>/dev/null && nvcc --version 2>/dev/null | grep 'release' | awk '{print $NF}' || echo 'Not Found'"
+      register: cuda_version_check
+      changed_when: false
+      failed_when: false
+
+    - name: 2a. Check CUDA installation paths
+      shell: |
+        echo "CUDA Toolkit Paths:"
+        ls -la /usr/local/cuda* 2>/dev/null || echo "No /usr/local/cuda* found"
+        echo "CUDA in PATH: $(source /etc/profile.d/cuda.sh 2>/dev/null && which nvcc 2>/dev/null || echo 'nvcc not accessible')"
+        echo "LD_LIBRARY_PATH: $(source /etc/profile.d/cuda.sh 2>/dev/null && echo ${LD_LIBRARY_PATH:-'Not set'})"
+      register: cuda_paths_check
+      changed_when: false
+      failed_when: false
+
+    - name: 3. Check for cuDNN Version
+      shell: "dpkg-query -W -f='${Version}' libcudnn9-cuda-12 2>/dev/null || echo 'Not Found'"
+      register: cudnn_version_check
+      changed_when: false
+      failed_when: false
+
+    - name: 4. Check for Miniconda installation
+      stat:
+        path: "{{ miniconda_path }}/bin/conda"
+      register: miniconda_check
+
+    - name: 4a. Check Python version in base conda
+      shell: "{{ miniconda_path }}/bin/python --version"
+      register: python_version_check
+      changed_when: false
+      failed_when: false
+      when: miniconda_check.stat.exists
+
+    - name: 4b. Confirm presence of llm_env environment
+      shell: "{{ miniconda_path }}/bin/conda env list | grep -q '^{{ llm_env_name }}' && echo 'Found' || echo 'Not Found'"
+      register: llm_env_check
+      changed_when: false
+      failed_when: false
+      when: miniconda_check.stat.exists
+
+    - name: 4c. Check for llama-stack in llm_env
+      shell: "{{ miniconda_path }}/envs/{{ llm_env_name }}/bin/pip show llama-stack"
+      register: llama_stack_check
+      changed_when: false
+      failed_when: false
+      when: llm_env_check.stdout == "Found"
+
+    - name: 5. Check for Ollama installation
+      shell: "ollama --version 2>/dev/null || echo 'Not Found'"
+      register: ollama_check
+      changed_when: false
+      failed_when: false
+
+    - name: 5a. Verify Ollama API endpoint
+      uri:
+        url: http://localhost:11434/api/tags
+        method: GET
+        timeout: 5
+      register: ollama_api_response
+      failed_when: false
+      changed_when: false
+
+    - name: 6. Check for AI models directory
+      stat:
+        path: "{{ model_dir }}"
+      register: model_dir_check
+
+    - name: 7. Check existing Ollama models
+      shell: "ollama list 2>/dev/null | grep -v 'NAME' | awk '{print $1}' | tr '\n' ', ' | sed 's/,$//' || echo 'None'"
+      register: ollama_models_check
+      changed_when: false
+      failed_when: false
+
+    - name: 8. Check GPU status and memory
+      shell: "nvidia-smi --query-gpu=name,memory.total,memory.used,utilization.gpu --format=csv,noheader,nounits || echo 'No GPU detected'"
+      register: gpu_status_check
+      changed_when: false
+      failed_when: false
+
+    - name: 9. Display Comprehensive Configuration Report
+      debug:
+        msg:
+          - "============================================================="
+          - " Pre-Flight Check Report for: {{ inventory_hostname }} "
+          - "============================================================="
+          - "🔧 HARDWARE & DRIVERS:"
+          - "  NVIDIA Driver: {{ nvidia_driver_check.stdout | default('Not Found') }}"
+          - "  CUDA Version:  {{ cuda_version_check.stdout | default('Not Found') }}"
+          - "  CUDA Paths:    {{ cuda_paths_check.stdout_lines | join(' | ') }}"
+          - "  cuDNN Version:   {{ cudnn_version_check.stdout | default('Not Found') }}"
+          - "  GPU Status:    {{ gpu_status_check.stdout | default('No GPU detected') }}"
+          - ""
+          - "🐍 PYTHON ENVIRONMENT:"
+          - "  Miniconda:     {{ 'Found at ' + miniconda_path if miniconda_check.stat.exists else 'Not Found' }}"
+          - "  Conda Python:  {{ python_version_check.stdout | default('Not Checked') }}"
+          - "  llm_env:       {{ llm_env_check.stdout | default('Not Checked') }}"
+          - "  llama-stack:   {{ 'INSTALLED' if llama_stack_check.rc == 0 else 'MISSING' if llm_env_check.stdout == 'Found' else 'N/A' }}"
+          - ""
+          - "🤖 AI INFRASTRUCTURE:"
+          - "  Ollama:        {{ ollama_check.stdout | default('Not Found') }}"
+          - "  Ollama API:    Status {{ ollama_api_response.status | default('No Response') }}"
+          - "  Model Dir:     {{ 'Found at ' + model_dir if model_dir_check.stat.exists else 'Not Found' }}"
+          - "  Models:        {{ ollama_models_check.stdout | default('None') }}"
+          - "-------------------------------------------------------------"
+
+    - name: 10. Save JSON report locally
+      copy:
+        content: |
+          {
+            "server": "{{ inventory_hostname }}",
+            "ip_address": "{{ ansible_default_ipv4.address }}",
+            "nvidia_driver": "{{ nvidia_driver_check.stdout | default('Not Found') }}",
+            "cuda_version": "{{ cuda_version_check.stdout | default('Not Found') }}",
+            "cudnn_version": "{{ cudnn_version_check.stdout | default('Not Found') }}",
+            "miniconda_installed": "{{ miniconda_check.stat.exists }}",
+            "llm_env_exists": "{{ llm_env_check.stdout == 'Found' if llm_env_check is defined else false }}",
+            "llama_stack_installed": "{{ llama_stack_check.rc == 0 if llama_stack_check is defined else false }}",
+            "ollama_installed": "{{ ollama_check.stdout != 'Not Found' if ollama_check is defined else false }}",
+            "ollama_api_status": "{{ ollama_api_response.status | default(-1) }}",
+            "model_directory_exists": "{{ model_dir_check.stat.exists }}",
+            "existing_models": "{{ ollama_models_check.stdout | default('None') }}",
+            "timestamp": "{{ ansible_date_time.iso8601 }}"
+          }
+        dest: "/tmp/preflight_{{ inventory_hostname }}_{{ ansible_date_time.epoch }}.json"
+      delegate_to: localhost
+      become: false

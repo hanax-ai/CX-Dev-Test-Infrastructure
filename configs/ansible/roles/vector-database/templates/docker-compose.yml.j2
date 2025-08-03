@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v{{ qdrant_version }}
+    container_name: qdrant_citadel
+    restart: unless-stopped
+    ports:
+      - "{{ qdrant_port }}:6333"
+      - "{{ qdrant_grpc_port }}:6334"
+    volumes:
+      - {{ qdrant_storage_path }}:/qdrant/storage
+      - {{ qdrant_snapshots_path }}:/qdrant/snapshots
+      - /etc/qdrant/config.yaml:/qdrant/config/production.yaml
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__LOG_LEVEL={{ log_level }}
+    networks:
+      - qdrant_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  qdrant_network:
+    driver: bridge

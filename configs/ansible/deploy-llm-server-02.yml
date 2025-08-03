@@ -66,6 +66,15 @@
         group: agent0
         mode: '0755'
 
+    - name: 6.1. Ensure /opt/ai_models has correct permissions for Ollama
+      file:
+        path: /opt/ai_models
+        state: directory
+        owner: ollama
+        group: ollama
+        recurse: yes
+      when: "'ai_processing_tier' in group_names"
+
     - name: 7. Configure Ollama systemd service for Dual GPU & Remote Access
       blockinfile:
         path: /etc/systemd/system/ollama.service

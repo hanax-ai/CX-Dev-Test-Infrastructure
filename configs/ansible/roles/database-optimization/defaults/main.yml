@@ -1,0 +1,46 @@
+---
+# Database Optimization Role - CX-Database Server (.35)
+# Manages PostgreSQL 15 and Redis configuration for RAG pipeline
+
+postgresql_version: "15"
+redis_version: "7"
+
+# PostgreSQL Configuration
+postgresql_port: 5432
+postgresql_max_connections: 200
+postgresql_shared_buffers: "256MB"
+postgresql_effective_cache_size: "1GB"
+postgresql_work_mem: "4MB"
+postgresql_maintenance_work_mem: "64MB"
+
+# Redis Configuration  
+redis_port: 6379
+redis_maxmemory: "512mb"
+redis_maxmemory_policy: "allkeys-lru"
+redis_save_config: "900 1 300 10 60 10000"
+
+# Database Users
+database_users:
+  - name: "citadel_api"
+    password: "{{ vault_citadel_api_password | default('changeme') }}"
+    priv: "ALL"
+  - name: "citadel_web"
+    password: "{{ vault_citadel_web_password | default('changeme') }}"
+    priv: "SELECT,INSERT,UPDATE"
+
+# Database Schemas
+databases:
+  - name: "citadel_rag"
+    owner: "citadel_api"
+  - name: "citadel_sessions"
+    owner: "citadel_web"
+
+# Backup Configuration
+backup_enabled: true
+backup_retention_days: 7
+backup_schedule: "0 2 * * *"  # Daily at 2 AM
+
+# Performance Settings
+enable_query_optimization: true
+enable_connection_pooling: true
+max_prepared_statements: 100

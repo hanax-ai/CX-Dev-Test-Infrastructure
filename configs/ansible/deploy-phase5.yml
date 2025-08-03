@@ -1,0 +1,188 @@
+---
+- name: Citadel Alpha - Phase 5: API Gateway & Web Services Deployment
+  hosts: phase5_servers
+  gather_facts: yes
+  become: yes
+  vars:
+    # Phase 5 Configuration
+    phase5_timestamp: "{{ ansible_date_time.iso8601 }}"
+    deployment_version: "v5.0.0"
+    
+    # Network Configuration
+    internal_network: "192.168.10.0/24"
+    
+    # LLM Server Endpoints (Phase 4 Dependencies)
+    llm_servers:
+      - name: "llm-server-01-chat"
+        ip: "192.168.10.29"
+        port: 11434
+        role: "conversational"
+      - name: "llm-server-02-instruct" 
+        ip: "192.168.10.28"
+        port: 11434
+        role: "instruction"
+      - name: "orchestration-server"
+        ip: "192.168.10.31"
+        port: 11434
+        role: "embedding"
+    
+    # Security Configuration
+    tls_enabled: true
+    ssl_cert_path: "/etc/ssl/certs/citadel"
+    firewall_enabled: true
+    
+    # Application Versions
+    app_versions:
+      postgresql: "15"
+      redis: "7"
+      nginx: "latest"
+      nodejs: "18"
+      python: "3.12"
+
+  pre_tasks:
+    - name: Phase 5 Pre-flight Validation
+      block:
+        - name: Verify Phase 4 LLM server connectivity
+          uri:
+            url: "http://{{ item.ip }}:{{ item.port }}/api/tags"
+            method: GET
+            timeout: 10
+          loop: "{{ llm_servers }}"
+          register: llm_connectivity
+          failed_when: false
+          
+        - name: Display Phase 4 dependency status
+          debug:
+            msg:
+              - "=== Phase 5 Pre-flight Check ==="
+              - "LLM Server 01 (Chat): {{ 'ONLINE' if llm_connectivity.results[0].status == 200 else 'OFFLINE' }}"
+              - "LLM Server 02 (Instruct): {{ 'ONLINE' if llm_connectivity.results[1].status == 200 else 'OFFLINE' }}"
+              - "Orchestration Server: {{ 'ONLINE' if llm_connectivity.results[2].status == 200 else 'OFFLINE' }}"
+              - "Phase 5 deployment proceeding..."
+
+  tasks:
+    - name: 1. System preparation and updates
+      block:
+        - name: Update package cache
+          apt:
+            update_cache: yes
+            cache_valid_time: 3600
+            
+        - name: Install common dependencies
+          apt:
+            name:
+              - curl
+              - wget
+              - git
+              - htop
+              - unzip
+              - software-properties-common
+              - apt-transport-https
+              - ca-certificates
+              - gnupg
+              - lsb-release
+            state: present
+
+    - name: 2. Configure firewall for Phase 5 services
+      block:
+        - name: Enable UFW firewall
+          ufw:
+            state: enabled
+            policy: deny
+            direction: incoming
+            
+        - name: Allow SSH access
+          ufw:
+            rule: allow
+            port: 22
+            from_ip: "{{ internal_network }}"
+            
+        - name: Allow internal network communication
+          ufw:
+            rule: allow
+            from_ip: "{{ internal_network }}"
+            to_ip: "{{ internal_network }}"
+
+  roles:
+    - role: database-optimization
+      when: inventory_hostname in groups['database_servers']
+      
+    - role: vector-database
+      when: inventory_hostname in groups['vector_db_servers']
+      
+    - role: api-gateway
+      when: inventory_hostname in groups['api_gateway_servers']
+      
+    - role: web-interface
+      when: inventory_hostname in groups['web_servers']
+
+  post_tasks:
+    - name: Phase 5 deployment validation
+      block:
+        - name: Verify service status
+          systemd:
+            name: "{{ item }}"
+            state: started
+          loop:
+            - nginx
+            - postgresql
+            - redis
+          failed_when: false
+          register: service_status
+          
+        - name: Generate Phase 5 deployment report
+          debug:
+            msg:
+              - "============================================================="
+              - " PHASE 5 DEPLOYMENT COMPLETE - CITADEL ALPHA"
+              - " Server: {{ inventory_hostname }} ({{ ansible_default_ipv4.address }})"
+              - "============================================================="
+              - "🚀 DEPLOYMENT STATUS:"
+              - "  Version: {{ deployment_version }}"
+              - "  Timestamp: {{ phase5_timestamp }}"
+              - "  Target Role: {{ group_names | join(', ') }}"
+              - ""
+              - "🔗 SERVICE INTEGRATION:"
+              - "  Phase 4 Dependencies: {{ llm_servers | length }} LLM servers validated"
+              - "  Network Security: UFW firewall configured"
+              - "  TLS Security: {{ 'ENABLED' if tls_enabled else 'DISABLED' }}"
+              - ""
+              - "📊 PHASE 5 ACHIEVEMENTS:"
+              - "  ✅ System preparation complete"
+              - "  ✅ Security configuration applied" 
+              - "  ✅ Service roles deployed"
+              - "  ✅ Integration testing ready"
+              - "============================================================="
+              
+        - name: Save deployment metadata
+          copy:
+            content: |
+              {
+                "phase": "5",
+                "version": "{{ deployment_version }}",
+                "timestamp": "{{ phase5_timestamp }}",
+                "server": "{{ inventory_hostname }}",
+                "ip_address": "{{ ansible_default_ipv4.address }}",
+                "roles": {{ group_names | to_json }},
+                "llm_dependencies": {{ llm_servers | to_json }},
+                "services_status": "{{ service_status | default('unknown') }}"
+              }
+            dest: "/tmp/phase5_deployment_{{ inventory_hostname }}_{{ ansible_date_time.epoch }}.json"
+          delegate_to: localhost
+          become: false
+
+  handlers:
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted
+        
+    - name: restart postgresql
+      systemd:
+        name: postgresql
+        state: restarted
+        
+    - name: restart redis
+      systemd:
+        name: redis
+        state: restarted

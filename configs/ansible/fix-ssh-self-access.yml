@@ -1,0 +1,33 @@
+---
+- name: Fix SSH Self-Access for Complete Infrastructure Connectivity
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Create .ssh directory if it doesn't exist
+      file:
+        path: "/home/agent0/.ssh"
+        state: directory
+        owner: agent0
+        group: agent0
+        mode: '0700'
+
+    - name: Add agent0 Ed25519 public key to authorized_keys (idempotent)
+      authorized_key:
+        user: agent0
+        state: present
+        key: "{{ lookup('file', '/home/agent0/.ssh/id_ed25519.pub') }}"
+        path: "/home/agent0/.ssh/authorized_keys"
+        manage_dir: false
+
+    - name: Ensure authorized_keys has correct permissions
+      file:
+        path: "/home/agent0/.ssh/authorized_keys"
+        owner: agent0
+        group: agent0
+        mode: '0600'
+
+    - name: Validate SSH key propagation
+      debug:
+        msg: "✅ Ed25519 public key propagated to {{ inventory_hostname }} ({{ ansible_host }})"

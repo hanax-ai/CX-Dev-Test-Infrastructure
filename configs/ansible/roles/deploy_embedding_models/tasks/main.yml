@@ -1,0 +1,10 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for roles/deploy_embedding_models
+- name: Ensure embedding models are pulled to the orchestration server
+  command: "ollama pull {{ item }}"
+  loop:
+    - mxbai-embed-large
+    - nomic-embed-text
+    - all-minilm
+  become_user: agent0

@@ -1,0 +1,84 @@
+---
+# Test playbook to verify Ollama permissions fix logic
+# Run with: ansible-playbook test-ollama-permissions.yml --limit hx-test-server
+
+- name: Test Ollama File Permissions Fix Logic
+  hosts: hx-test-server
+  gather_facts: yes
+  become: yes
+  vars:
+    test_model_dir: "/tmp/test_ai_models"
+    
+  tasks:
+    - name: Create test directory structure
+      file:
+        path: "{{ test_model_dir }}/subdir"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      
+    - name: Create test files with wrong ownership
+      file:
+        path: "{{ test_model_dir }}/{{ item }}"
+        state: touch
+        owner: root
+        group: root
+        mode: '0644'
+      loop:
+        - "test_model.bin"
+        - "subdir/nested_model.bin"
+
+    - name: Ensure test user and group exist (simulating ollama)
+      group:
+        name: testuser
+        state: present
+      
+    - name: Ensure test user exists
+      user:
+        name: testuser
+        group: testuser
+        system: yes
+        home: /tmp/testuser
+        shell: /bin/false
+        state: present
+
+    - name: Test the permissions fix logic
+      file:
+        path: "{{ test_model_dir }}"
+        state: directory
+        owner: testuser
+        group: testuser
+        recurse: yes
+      register: test_permissions_fixed
+
+    - name: Verify ownership was changed
+      stat:
+        path: "{{ test_model_dir }}/test_model.bin"
+      register: test_file_stat
+
+    - name: Display test results
+      debug:
+        msg:
+          - "Test Results:"
+          - "  Directory: {{ test_model_dir }}"
+          - "  Changed: {{ test_permissions_fixed.changed }}"
+          - "  File Owner: {{ test_file_stat.stat.pw_name }}"
+          - "  File Group: {{ test_file_stat.stat.gr_name }}"
+          - "  Test Status: {{ 'PASS' if test_file_stat.stat.pw_name == 'testuser' else 'FAIL' }}"
+
+    - name: Cleanup test directory
+      file:
+        path: "{{ test_model_dir }}"
+        state: absent
+        
+    - name: Cleanup test user
+      user:
+        name: testuser
+        state: absent
+        remove: yes
+        
+    - name: Cleanup test group
+      group:
+        name: testuser
+        state: absent

@@ -1,0 +1,80 @@
+---
+# Python 3.12.3 virtual environment setup
+# Standardized across all CX R&D Infrastructure servers
+
+- name: Install Python and pip
+  apt:
+    name:
+      - python3
+      - python3-pip
+      - python3-venv
+      - python3-dev
+    state: present
+  become: yes
+
+- name: Create /opt/citadel directory
+  file:
+    path: /opt/citadel
+    state: directory
+    owner: agent0
+    group: agent0
+    mode: '0755'
+  become: yes
+
+- name: Create Python virtual environment at /opt/citadel/env
+  command: python3 -m venv /opt/citadel/env
+  args:
+    creates: /opt/citadel/env/bin/activate
+  become_user: agent0
+
+- name: Upgrade pip in virtual environment
+  pip:
+    name: pip
+    state: latest
+    virtualenv: /opt/citadel/env
+  become_user: agent0
+
+- name: Install wheel in virtual environment
+  pip:
+    name: wheel
+    state: present
+    virtualenv: /opt/citadel/env
+  become_user: agent0
+
+- name: Copy requirements.txt to target server
+  copy:
+    src: "{{ playbook_dir }}/../../requirements.txt"
+    dest: /opt/citadel/requirements.txt
+    owner: agent0
+    group: agent0
+    mode: '0644'
+  become: yes
+
+- name: Install production requirements
+  pip:
+    requirements: /opt/citadel/requirements.txt
+    virtualenv: /opt/citadel/env
+  become_user: agent0
+
+- name: Add virtual environment activation to .bashrc
+  lineinfile:
+    path: /home/agent0/.bashrc
+    line: 'source /opt/citadel/env/bin/activate'
+    state: present
+  become_user: agent0
+
+- name: Create Python environment info script
+  copy:
+    content: |
+      #!/bin/bash
+      echo "CX R&D Infrastructure Python Environment"
+      echo "========================================"
+      echo "Python Version: $(python --version)"
+      echo "Virtual Environment: /opt/citadel/env"
+      echo "Installed Packages:"
+      pip list
+    dest: /opt/citadel/env_info.sh
+    owner: agent0
+    group: agent0
+    mode: '0755'
+  become: yes

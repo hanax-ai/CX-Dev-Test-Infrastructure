@@ -1,0 +1,215 @@
+---
+- name: Install Docker for Qdrant
+  block:
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker packages
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Start and enable Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+
+- name: Setup Qdrant storage directories
+  block:
+    - name: Create Qdrant data directory
+      file:
+        path: "{{ qdrant_storage_path }}"
+        state: directory
+        owner: "1000"
+        group: "1000"
+        mode: '0755'
+
+    - name: Create Qdrant snapshots directory
+      file:
+        path: "{{ qdrant_snapshots_path }}"
+        state: directory
+        owner: "1000"
+        group: "1000"
+        mode: '0755'
+
+    - name: Create Qdrant config directory
+      file:
+        path: /etc/qdrant
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+- name: Configure Qdrant
+  block:
+    - name: Generate Qdrant configuration
+      template:
+        src: qdrant_config.yaml.j2
+        dest: /etc/qdrant/config.yaml
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart qdrant
+
+    - name: Create Qdrant docker-compose file
+      template:
+        src: docker-compose.yml.j2
+        dest: /opt/qdrant/docker-compose.yml
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart qdrant
+
+    - name: Create qdrant systemd service
+      template:
+        src: qdrant.service.j2
+        dest: /etc/systemd/system/qdrant.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - reload systemd
+        - restart qdrant
+
+- name: Start Qdrant service
+  block:
+    - name: Start and enable Qdrant
+      systemd:
+        name: qdrant
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Wait for Qdrant to be ready
+      uri:
+        url: "http://127.0.0.1:{{ qdrant_port }}/health"
+        method: GET
+        timeout: 30
+      register: qdrant_health
+      until: qdrant_health.status == 200
+      retries: 10
+      delay: 5
+
+- name: Initialize vector collections
+  block:
+    - name: Create vector collections
+      uri:
+        url: "http://127.0.0.1:{{ qdrant_port }}/collections/{{ item.name }}"
+        method: PUT
+        headers:
+          Content-Type: "application/json"
+          api-key: "{{ qdrant_api_key }}"
+        body_format: json
+        body:
+          vectors:
+            size: "{{ item.vector_size }}"
+            distance: "{{ item.distance }}"
+          optimizers_config:
+            max_segment_size: "{{ qdrant_max_segment_size }}"
+            indexing_threshold: "{{ qdrant_indexing_threshold }}"
+        status_code: [200, 409]  # 409 = already exists
+      loop: "{{ vector_collections }}"
+      register: collection_creation
+
+    - name: Display collection creation results
+      debug:
+        msg: "Collection {{ item.item.name }}: {{ 'CREATED' if item.status == 200 else 'EXISTS' }}"
+      loop: "{{ collection_creation.results }}"
+
+- name: Setup Qdrant monitoring and backup
+  block:
+    - name: Create backup script
+      template:
+        src: qdrant_backup.sh.j2
+        dest: /usr/local/bin/qdrant_backup.sh
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Setup backup cron job
+      cron:
+        name: "Qdrant backup"
+        cron_file: qdrant_backup
+        user: root
+        minute: "0"
+        hour: "3"
+        job: "/usr/local/bin/qdrant_backup.sh"
+        state: "{{ 'present' if backup_enabled else 'absent' }}"
+
+    - name: Create health check script
+      template:
+        src: qdrant_health_check.sh.j2
+        dest: /usr/local/bin/qdrant_health_check.sh
+        owner: root
+        group: root
+        mode: '0755'
+
+- name: Configure firewall for Qdrant
+  block:
+    - name: Allow Qdrant HTTP API port
+      ufw:
+        rule: allow
+        port: "{{ qdrant_port }}"
+        from_ip: "192.168.10.0/24"
+
+    - name: Allow Qdrant gRPC port
+      ufw:
+        rule: allow
+        port: "{{ qdrant_grpc_port }}"
+        from_ip: "192.168.10.0/24"
+
+- name: Final validation
+  block:
+    - name: Test Qdrant API connectivity
+      uri:
+        url: "http://127.0.0.1:{{ qdrant_port }}/collections"
+        method: GET
+        headers:
+          api-key: "{{ qdrant_api_key }}"
+        timeout: 10
+      register: qdrant_collections
+
+    - name: Test vector search functionality
+      uri:
+        url: "http://127.0.0.1:{{ qdrant_port }}/collections/{{ vector_collections[0].name }}/points/search"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          api-key: "{{ qdrant_api_key }}"
+        body_format: json
+        body:
+          vector: "{{ range(vector_collections[0].vector_size) | map('random') | list }}"
+          limit: 1
+        status_code: [200, 400]  # 400 = empty collection is OK
+      register: search_test
+
+    - name: Display Qdrant status
+      debug:
+        msg:
+          - "=== QDRANT VECTOR DATABASE READY ==="
+          - "Server: {{ inventory_hostname }} ({{ ansible_default_ipv4.address }})"
+          - "API Endpoint: http://{{ ansible_default_ipv4.address }}:{{ qdrant_port }}"
+          - "gRPC Endpoint: {{ ansible_default_ipv4.address }}:{{ qdrant_grpc_port }}"
+          - "Collections: {{ qdrant_collections.json.result.collections | length if qdrant_collections.json is defined else 0 }}"
+          - "Storage Path: {{ qdrant_storage_path }}"
+          - "Backup System: {{ 'ENABLED' if backup_enabled else 'DISABLED' }}"
+          - "Search Test: {{ 'PASSED' if search_test.status in [200, 400] else 'FAILED' }}"

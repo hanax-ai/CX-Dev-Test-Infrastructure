@@ -1,0 +1,43 @@
+---
+- name: Fix CUDA Environment Configuration - LLM Server 02
+  hosts: cx-llm-02
+  gather_facts: no
+  become: yes
+  
+  tasks:
+    - name: 1. Create CUDA environment script
+      copy:
+        content: |
+          #!/bin/bash
+          # CUDA 12.9 Environment Configuration
+          export PATH=/usr/local/cuda-12.9/bin:$PATH
+          export LD_LIBRARY_PATH=/usr/local/cuda-12.9/lib64:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+          export CUDA_HOME=/usr/local/cuda-12.9
+        dest: /etc/profile.d/cuda.sh
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: 2. Verify CUDA environment script
+      shell: cat /etc/profile.d/cuda.sh
+      register: cuda_script_content
+
+    - name: 3. Test CUDA environment after sourcing
+      shell: bash -c 'source /etc/profile.d/cuda.sh && nvcc --version'
+      register: cuda_test
+      failed_when: false
+
+    - name: 4. Display CUDA fix results
+      debug:
+        msg:
+          - "============================================================="
+          - " CUDA ENVIRONMENT FIX - RESULTS"
+          - "============================================================="
+          - "📄 CUDA Script Created:"
+          - "{{ cuda_script_content.stdout_lines }}"
+          - ""
+          - "🔧 CUDA Test Results:"
+          - "{{ cuda_test.stdout_lines if cuda_test.rc == 0 else ['FAILED: ' + cuda_test.stderr] }}"
+          - ""
+          - "✅ Status: {{ 'SUCCESS' if cuda_test.rc == 0 else 'NEEDS ATTENTION' }}"
+          - "============================================================="

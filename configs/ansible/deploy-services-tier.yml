@@ -1,0 +1,298 @@
+---
+- name: Deploy Services Tier - Phase 5
+  hosts: services_servers
+  become: true
+  vars:
+    postgres_version: "17.5"
+    redis_version: "8.0.3"
+    qdrant_version: "latest"
+    fastapi_deps: "fastapi uvicorn pydantic"
+    nginx_conf_dir: "/etc/nginx/sites-available"
+    openwebui_version: "latest"
+    pgpool_version: "latest"
+    flyway_version: "10.14.0"
+    ollama_endpoints:
+      chat: "http://192.168.10.29:11434"
+      instruct: "http://192.168.10.28:11434"
+      embeddings: "http://192.168.10.31:11434"
+
+  tasks:
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Install common prerequisites
+      apt:
+        name:
+          - wget
+          - curl
+          - gnupg
+          - lsb-release
+          - software-properties-common
+          - python3-pip
+          - python3-venv
+        state: present
+
+    - name: Deploy Qdrant Vector DB (on .30)
+      when: inventory_hostname == 'cx-vector-db'
+      block:
+        - name: Create qdrant user
+          user:
+            name: qdrant
+            system: yes
+            shell: /bin/false
+            home: /var/lib/qdrant
+            create_home: yes
+
+        - name: Download Qdrant binary
+          get_url:
+            url: "https://github.com/qdrant/qdrant/releases/latest/download/qdrant-x86_64-unknown-linux-gnu.tar.gz"
+            dest: /tmp/qdrant.tar.gz
+
+        - name: Create Qdrant directories
+          file:
+            path: "{{ item }}"
+            state: directory
+            owner: qdrant
+            group: qdrant
+            mode: '0755'
+          loop:
+            - /opt/qdrant
+            - /var/lib/qdrant
+            - /etc/qdrant
+
+        - name: Extract Qdrant binary
+          unarchive:
+            src: /tmp/qdrant.tar.gz
+            dest: /opt/qdrant
+            remote_src: yes
+            owner: qdrant
+            group: qdrant
+
+        - name: Create Qdrant config
+          copy:
+            content: |
+              storage:
+                storage_path: "/var/lib/qdrant/storage"
+              service:
+                host: "0.0.0.0"
+                http_port: 6333
+                grpc_port: 6334
+            dest: /etc/qdrant/config.yaml
+            owner: qdrant
+            group: qdrant
+
+        - name: Create Qdrant systemd service
+          copy:
+            content: |
+              [Unit]
+              Description=Qdrant Vector Database
+              After=network.target
+
+              [Service]
+              Type=simple
+              User=qdrant
+              Group=qdrant
+              WorkingDirectory=/var/lib/qdrant
+              ExecStart=/opt/qdrant/qdrant --config-path /etc/qdrant/config.yaml
+              Restart=always
+              RestartSec=3
+
+              [Install]
+              WantedBy=multi-user.target
+            dest: /etc/systemd/system/qdrant.service
+
+        - name: Start and enable Qdrant
+          systemd:
+            name: qdrant
+            state: started
+            enabled: yes
+            daemon_reload: yes
+
+        - name: Configure firewall for Qdrant
+          ufw:
+            rule: allow
+            port: "6333"
+            from_ip: 192.168.10.0/24
+
+        - name: Test Qdrant
+          uri:
+            url: "http://localhost:6333/collections"
+            method: GET
+          register: qdrant_test
+          retries: 5
+          delay: 10
+          until: qdrant_test.status == 200
+
+    - name: Deploy PostgreSQL/Redis (on .35)
+      when: inventory_hostname == 'cx-database'
+      block:
+        - name: Add PostgreSQL GPG key
+          apt_key:
+            url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+            state: present
+
+        - name: Add PostgreSQL repo
+          apt_repository:
+            repo: deb http://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main
+            state: present
+
+        - name: Install PostgreSQL
+          apt:
+            update_cache: yes
+            name: postgresql-17
+            state: present
+
+        - name: Install Redis
+          apt:
+            name: redis-server
+            state: present
+
+        - name: Install Pgpool-II
+          apt:
+            name: pgpool2
+            state: present
+
+        - name: Download Flyway
+          get_url:
+            url: "https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/{{ flyway_version }}/flyway-commandline-{{ flyway_version }}-linux-x64.tar.gz"
+            dest: "/opt/flyway-{{ flyway_version }}.tar.gz"
+
+        - name: Extract Flyway
+          unarchive:
+            src: "/opt/flyway-{{ flyway_version }}.tar.gz"
+            dest: /opt/
+            remote_src: yes
+
+        - name: Start services
+          service:
+            name: "{{ item }}"
+            state: started
+            enabled: yes
+          loop:
+            - postgresql
+            - redis-server
+            - pgpool
+
+        - name: Configure firewall
+          ufw:
+            rule: allow
+            port: "{{ item }}"
+            from_ip: 192.168.10.0/24
+          loop:
+            - "5432"  # PostgreSQL
+            - "6379"  # Redis
+            - "5433"  # Pgpool
+
+    - name: Deploy OpenWebUI (on .38)
+      when: inventory_hostname == 'cx-web'
+      block:
+        - name: Install Docker (if needed)
+          apt:
+            name: docker.io
+            state: present
+
+        - name: Start Docker service
+          service:
+            name: docker
+            state: started
+            enabled: yes
+
+        - name: Pull and run OpenWebUI
+          docker_container:
+            name: open-webui
+            image: ghcr.io/open-webui/open-webui:main
+            state: started
+            restart_policy: always
+            ports:
+              - "80:8080"
+            volumes:
+              - open-webui:/app/backend/data
+            env:
+              WEBUI_AUTH: "0"
+            network_mode: host
+
+        - name: Configure firewall
+          ufw:
+            rule: allow
+            port: "80"
+            from_ip: 192.168.10.0/24
+
+    - name: Deploy FastAPI & Nginx (on .39)
+      when: inventory_hostname == 'cx-api-gateway'
+      block:
+        - name: Create gateway directories
+          file:
+            path: "{{ item }}"
+            state: directory
+            owner: agent0
+            group: agent0
+            mode: '0755'
+          loop:
+            - /opt/gateway
+            - /opt/gateway/app
+
+        - name: Create virtual env
+          command: python3 -m venv /opt/gateway/env
+          args:
+            creates: /opt/gateway/env/bin/activate
+
+        - name: Install FastAPI deps
+          pip:
+            name: "{{ fastapi_deps }}"
+            virtualenv: /opt/gateway/env
+
+        - name: Copy FastAPI application code
+          copy:
+            src: files/gateway_app/
+            dest: /opt/gateway/app/
+            owner: agent0
+            group: agent0
+
+        - name: Create and enable systemd service for FastAPI
+          template:
+            src: templates/gateway.service.j2
+            dest: /etc/systemd/system/gateway.service
+            owner: root
+            group: root
+            mode: '0644'
+          notify: restart_gateway
+
+        - name: Reload systemd daemon
+          systemd:
+            daemon_reload: yes
+
+        - name: Install Nginx
+          apt:
+            name: nginx
+            state: present
+
+        - name: Configure Nginx proxy
+          template:
+            src: templates/nginx.conf.j2  # Create template with proxy to FastAPI (port 8000) and LLM endpoints
+            dest: "{{ nginx_conf_dir }}/default"
+          notify: restart_nginx
+
+        - name: Ensure gateway service is started and enabled
+          systemd:
+            name: gateway
+            state: started
+            enabled: yes
+
+        - name: Configure firewall
+          ufw:
+            rule: allow
+            port: "8000"
+            from_ip: 192.168.10.0/24
+
+  handlers:
+    - name: restart_nginx
+      service:
+        name: nginx
+        state: restarted
+
+    - name: restart_gateway
+      systemd:
+        name: gateway
+        state: restarted

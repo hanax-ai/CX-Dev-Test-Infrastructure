@@ -1,25 +1,26 @@
-# configs/ansible/deploy-llm-server-01.yml
+# configs/ansible/deploy-orchestration-server.yml
 ---
-- name: Deploy LLM Server 01 - Phase 4.2 (Chat Models)
-  hosts: hx-llm-server-01
+- name: Deploy Orchestration Server - Phase 4.1
+  hosts: hx-orc-server
   gather_facts: yes
   become: yes
   vars:
     model_dir: "/opt/ai_models"
     ollama_service_file: "/etc/systemd/system/ollama.service"
-    miniconda_path: "/home/agent0/miniconda3"
-    llm_env_name: "llm_env"
-    chat_models:
-      - name: "llama3"
-        tag: "8b"  # Base for chat
-      - name: "nous-hermes2"
-        tag: "latest"
-      - name: "llama3.2"
-        tag: "3b"  # 3B Instruct model via Ollama
+    embedding_models:
+      - name: "mxbai-embed-large"
+        tag: "335m"
+        size: "334M"
+      - name: "nomic-embed-text"
+        tag: "v1.5"
+        size: "137M"
+      - name: "all-minilm"
+        tag: "33m"
+        size: "23M"
 
   tasks:
-    - name: 1. Verify CUDA environment
-      shell: bash -c 'source /etc/profile.d/cuda.sh && nvcc --version'
+    - name: 1. Verify CUDA environment is properly configured
+      shell: bash -c "source /etc/profile.d/cuda.sh && nvcc --version"
       register: cuda_verification
       changed_when: false
       failed_when: cuda_verification.rc != 0
@@ -35,19 +36,18 @@
       register: ollama_install
       changed_when: "'Ollama is now installed' in ollama_install.stdout or ollama_install.rc == 0"
 
-    - name: 4. Check Ollama service file
+    - name: 4. Check if Ollama service file exists
       stat:
         path: "{{ ollama_service_file }}"
       register: ollama_service_exists
 
-    - name: 5. Configure Ollama for GPU and remote access
+    - name: 5. Configure Ollama service for GPU and remote access
       blockinfile:
         path: "{{ ollama_service_file }}"
         block: |
           Environment="OLLAMA_HOST=0.0.0.0"
           Environment="OLLAMA_ORIGINS=*"
-          Environment="OLLAMA_MODELS={{ model_dir }}"
-          Environment="CUDA_VISIBLE_DEVICES=0,1"
+          Environment="CUDA_VISIBLE_DEVICES=0"
           Environment="PATH=/usr/local/cuda-12.9/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
           Environment="LD_LIBRARY_PATH=/usr/local/cuda-12.9/lib64"
         marker: "# {mark} ANSIBLE MANAGED OLLAMA ENVIRONMENT"
@@ -56,7 +56,7 @@
       when: ollama_service_exists.stat.exists
       notify: restart_ollama
 
-    - name: 6. Create AI models directory (on NVMe/SSD/HDD)
+    - name: 6. Create AI models directory
       file:
         path: "{{ model_dir }}"
         state: directory
@@ -73,21 +73,21 @@
         recurse: yes
       when: "'ai_processing_tier' in group_names"
 
-    - name: 7. Start and enable Ollama
+    - name: 7. Start and enable Ollama service
       systemd:
         name: ollama
-        state: started
+        state: restarted
         enabled: yes
         daemon_reload: yes
 
-    - name: 8. Wait for Ollama ready
+    - name: 8. Wait for Ollama service to be ready
       wait_for:
         port: 11434
-        host: 0.0.0.0
-        delay: 5
-        timeout: 30
+        host: 127.0.0.1
+        delay: 10
+        timeout: 60
 
-    - name: 9. Test Ollama accessibility
+    - name: 9. Test Ollama service accessibility
       uri:
         url: "http://{{ ansible_default_ipv4.address }}:11434/api/tags"
         method: GET
@@ -96,9 +96,16 @@
       retries: 3
       delay: 5
 
-    - name: 10. Pull all chat models with Ollama
+    - name: 10. Display Ollama service status
+      debug:
+        msg:
+          - "Ollama Service Status: {{ 'RUNNING' if ollama_api_test.status == 200 else 'FAILED' }}"
+          - "API Endpoint: http://{{ ansible_default_ipv4.address }}:11434"
+          - "Response Code: {{ ollama_api_test.status | default('N/A') }}"
+
+    - name: 11. Pull embedding models
       shell: "ollama pull {{ item.name }}:{{ item.tag }}"
-      loop: "{{ chat_models }}"
+      loop: "{{ embedding_models }}"
       register: model_pulls
       become_user: root
       environment:
@@ -106,45 +113,51 @@
       retries: 2
       delay: 10
 
-    - name: 11. Verify all models
+    - name: 12. Verify models are installed
       shell: "ollama list"
       register: installed_models
       changed_when: false
 
-    - name: 12. Test chat model
+    - name: 13. Display installed models
+      debug:
+        msg:
+          - "Successfully Installed Embedding Models:"
+          - "{{ installed_models.stdout_lines }}"
+
+    - name: 14. Test embedding model functionality
       shell: |
-        echo '{"model": "llama3:8b", "prompt": "Hello as chat model"}' | \
-        curl -s -X POST http://localhost:11434/api/chat -d @-
-      register: chat_test
+        echo '{"model": "mxbai-embed-large:335m", "prompt": "Hello world"}' | \
+        curl -s -X POST http://localhost:11434/api/embeddings -d @-
+      register: embedding_test
       changed_when: false
       failed_when: false
 
-    - name: 13. Configure firewall
+    - name: 15. Configure firewall for Ollama
       ufw:
         rule: allow
         port: 11434
         from_ip: 192.168.10.0/24
-        comment: "Ollama API - Internal only"
+        comment: "Ollama API - Internal network only"
       notify: reload_ufw
 
-    - name: 14. Generate deployment summary
+    - name: 16. Generate deployment summary
       set_fact:
-        llm01_deployment:
+        orchestration_deployment:
           server: "{{ inventory_hostname }}"
           ip_address: "{{ ansible_default_ipv4.address }}"
           ollama_version: "{{ ollama_install.stdout | regex_search('version [0-9.]+') | default('Unknown') }}"
           service_status: "{{ 'RUNNING' if ollama_api_test.status == 200 else 'FAILED' }}"
           api_endpoint: "http://{{ ansible_default_ipv4.address }}:11434"
-          installed_models: "{{ chat_models | length }}"
-          chat_test: "{{ 'SUCCESS' if 'response' in chat_test.stdout else 'FAILED' }}"
+          installed_models: "{{ embedding_models | length }}"
+          embedding_test: "{{ 'SUCCESS' if 'embedding' in embedding_test.stdout else 'FAILED' }}"
           deployment_time: "{{ ansible_date_time.iso8601 }}"
           cuda_configured: "{{ cuda_verification.rc == 0 }}"
 
-    - name: 15. Display status
+    - name: 17. Display final deployment status
       debug:
         msg:
           - "============================================================="
-          - " LLM SERVER 01 DEPLOYMENT COMPLETE"
+          - " ORCHESTRATION SERVER DEPLOYMENT COMPLETE"
           - " Server: {{ inventory_hostname }} ({{ ansible_default_ipv4.address }})"
           - "============================================================="
           - "🚀 OLLAMA SERVICE:"
@@ -152,25 +165,24 @@
           - "  API Endpoint: http://{{ ansible_default_ipv4.address }}:11434"
           - "  GPU Acceleration: {{ 'ENABLED' if cuda_verification.rc == 0 else 'DISABLED' }}"
           - ""
-          - "🤖 CHAT MODELS DEPLOYED:"
-          - "{% for model in chat_models %}"
-          - "  ✅ {{ model.name }}:{{ model.tag }}"
+          - "🤖 EMBEDDING MODELS DEPLOYED:"
+          - "{% for model in embedding_models %}"
+          - "  ✅ {{ model.name }}:{{ model.tag }} ({{ model.size }})"
           - "{% endfor %}"
           - ""
           - "🔧 CONFIGURATION:"
-          - "  Model Directory: {{ model_dir }} (NVMe/SSD/HDD)"
-          - "  Python Environment: {{ llm_env_name }}"
-          - "  Remote Access: Enabled"
-          - "  Firewall: Configured"
-          - "  CUDA: {{ 'CONFIGURED' if cuda_verification.rc == 0 else 'NOT' }}"
+          - "  Model Directory: {{ model_dir }}"
+          - "  Remote Access: Enabled (0.0.0.0:11434)"
+          - "  Firewall: Configured for internal network"
+          - "  CUDA Environment: {{ 'CONFIGURED' if cuda_verification.rc == 0 else 'NOT CONFIGURED' }}"
           - ""
-          - "🎯 STATUS: {{ 'SUCCESS' if ollama_api_test.status == 200 else 'ATTENTION' }}"
+          - "🎯 DEPLOYMENT STATUS: {{ 'SUCCESS' if ollama_api_test.status == 200 else 'NEEDS ATTENTION' }}"
           - "============================================================="
 
-    - name: 16. Save report
+    - name: 18. Save deployment report
       copy:
-        content: "{{ llm01_deployment | to_nice_json }}"
-        dest: "/tmp/llm01_deployment_{{ ansible_date_time.epoch }}.json"
+        content: "{{ orchestration_deployment | to_nice_json }}"
+        dest: "/tmp/orchestration_deployment_{{ ansible_date_time.epoch }}.json"
       delegate_to: localhost
       become: false
 

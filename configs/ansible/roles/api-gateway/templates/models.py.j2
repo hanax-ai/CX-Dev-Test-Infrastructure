@@ -1,0 +1,134 @@
+"""
+Pydantic models for Citadel Alpha API Gateway
+"""
+
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any, Union
+from datetime import datetime
+from enum import Enum
+
+class ModelType(str, Enum):
+    CHAT = "chat"
+    INSTRUCT = "instruct"
+    EMBEDDING = "embedding"
+
+class ChatRole(str, Enum):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+
+# Authentication Models
+class UserCreate(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    email: str = Field(..., regex=r'^[^@]+@[^@]+\.[^@]+$')
+    password: str = Field(..., min_length=8)
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+class User(BaseModel):
+    id: int
+    username: str
+    email: str
+    is_active: bool
+    created_at: datetime
+
+# Chat Models
+class ChatMessage(BaseModel):
+    role: ChatRole
+    content: str
+    timestamp: Optional[datetime] = None
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+    model: Optional[str] = None
+    model_type: ModelType = ModelType.CHAT
+    temperature: Optional[float] = Field(0.7, ge=0.0, le=2.0)
+    max_tokens: Optional[int] = Field(None, ge=1, le=4096)
+    stream: bool = False
+
+class ChatResponse(BaseModel):
+    id: str
+    model: str
+    created: int
+    choices: List[Dict[str, Any]]
+    usage: Optional[Dict[str, int]] = None
+
+# RAG Models
+class DocumentUpload(BaseModel):
+    title: str
+    content: str
+    metadata: Optional[Dict[str, Any]] = None
+
+class DocumentResponse(BaseModel):
+    id: str
+    title: str
+    content_hash: str
+    embedding_id: Optional[str] = None
+    created_at: datetime
+
+class RAGQuery(BaseModel):
+    query: str
+    collection: str = "citadel_documents"
+    limit: int = Field(5, ge=1, le=20)
+    threshold: float = Field(0.7, ge=0.0, le=1.0)
+
+class RAGResult(BaseModel):
+    id: str
+    content: str
+    score: float
+    metadata: Optional[Dict[str, Any]] = None
+
+class RAGResponse(BaseModel):
+    query: str
+    results: List[RAGResult]
+    total_results: int
+    embedding_time: float
+    search_time: float
+
+class RAGChatRequest(BaseModel):
+    query: str
+    messages: List[ChatMessage]
+    collection: str = "citadel_documents"
+    context_limit: int = Field(5, ge=1, le=10)
+    model: Optional[str] = None
+    temperature: Optional[float] = Field(0.7, ge=0.0, le=2.0)
+
+# Health Check Models
+class ServiceHealth(BaseModel):
+    status: str
+    response_time: Optional[float] = None
+    error: Optional[str] = None
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+    timestamp: str
+    services: Dict[str, ServiceHealth]
+
+# Model Management
+class ModelInfo(BaseModel):
+    name: str
+    size: str
+    parameter_size: str
+    family: str
+    families: Optional[List[str]] = None
+    format: str
+    modified_at: datetime
+    digest: str
+
+class ModelsResponse(BaseModel):
+    models: List[ModelInfo]
+
+# Error Models
+class ErrorResponse(BaseModel):
+    error: str
+    detail: Optional[str] = None
+    timestamp: datetime
+    request_id: Optional[str] = None

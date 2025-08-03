@@ -1,0 +1,29 @@
+service:
+  host: 0.0.0.0
+  http_port: {{ qdrant_port }}
+  grpc_port: {{ qdrant_grpc_port }}
+  enable_cors: {{ enable_cors | lower }}
+  cors_origins: {{ allowed_origins | to_json }}
+
+storage:
+  storage_path: {{ qdrant_storage_path }}
+  snapshots_path: {{ qdrant_snapshots_path }}
+  performance:
+    max_search_threads: {{ qdrant_max_search_threads }}
+  optimizers:
+    max_segment_size_kb: {{ (qdrant_max_segment_size | regex_replace('mb', '') | int * 1024) | int }}
+    indexing_threshold_kb: {{ qdrant_indexing_threshold }}
+
+cluster:
+  enabled: false
+
+telemetry:
+  disabled: {{ not metrics_enabled }}
+
+log_level: {{ log_level }}
+
+api_key: {{ qdrant_api_key }}
+
+service_config:
+  max_request_size_mb: {{ qdrant_max_payload_size | regex_replace('mb', '') | int }}
+  max_workers: {{ qdrant_parallel_shards }}

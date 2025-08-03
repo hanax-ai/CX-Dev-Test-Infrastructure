@@ -1,0 +1,60 @@
+# configs/ansible/inventory.yaml
+---
+all:
+  children:
+    # --- Tier-based Groupings for Playbook Targeting ---
+    ai_processing_tier:
+      hosts:
+        hx-llm-server-01:
+        hx-llm-server-02:
+        hx-orchestration-server:
+    
+    data_tier:
+      hosts:
+        hx-vector-database-server:
+        hx-sql-database-server:
+
+    web_api_tier:
+      hosts:
+        hx-web-server:
+        hx-api-gateway-server:
+
+    dev_ops_tier:
+      hosts:
+        hx-dev-server:
+        hx-test-server:
+        hx-dev-ops-server:
+
+    infrastructure_services_tier:
+      hosts:
+        # Note: The authoritative inventory did not list a metrics server.
+        # This group is a placeholder for when it is formally added.
+
+  # --- Host Definitions (Single Source of Truth) ---
+  hosts:
+    hx-llm-server-01:
+      ansible_host: 192.168.10.29
+    hx-llm-server-02:
+      ansible_host: 192.168.10.28
+    hx-orchestration-server:
+      ansible_host: 192.168.10.31
+    hx-vector-database-server:
+      ansible_host: 192.168.10.30
+    hx-sql-database-server:
+      ansible_host: 192.168.10.35
+    hx-web-server:
+      ansible_host: 192.168.10.38
+    hx-api-gateway-server:
+      ansible_host: 192.168.10.39
+    hx-dev-server:
+      ansible_host: 192.168.10.33
+    hx-test-server:
+      ansible_host: 192.168.10.34
+    hx-dev-ops-server:
+      ansible_host: 192.168.10.36
+
+  vars:
+    # --- Global Variables ---
+    ansible_user: agent0
+    # Standardize on Ed25519 keys as recommended
+    ansible_ssh_private_key_file: "~/.ssh/id_ed25519"

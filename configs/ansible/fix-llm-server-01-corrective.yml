@@ -1,0 +1,100 @@
+# configs/ansible/fix-llm-server-01-corrective.yml
+---
+- name: Fix LLM Server 01 - Phase 4.2 Corrective Actions
+  hosts: hx-llm-server-01
+  gather_facts: yes
+  become: yes
+  vars:
+    model_dir: "/opt/ai_models"
+    ollama_service_file: "/etc/systemd/system/ollama.service"
+    miniconda_path: "/home/agent0/miniconda3"
+    ai_env_name: "ai_env"
+    additional_model_id: "Llama-3.2-3B-Instruct"
+    additional_model_url: "https://llama3-2-lightweight.llamameta.net/*?Policy=eyJTdGF0ZW1lbnQiOlt7InVuaXF1ZV9oYXNoIjoiZng5YzkxamYyOTFta283OWdrMDZuNGc5IiwiUmVzb3VyY2UiOiJodHRwczpcL1wvbGxhbWEzLTItbGlnaHR3ZWlnaHQubGxhbWFtZXRhLm5ldFwvKiIsIkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc1NDE1MTk4NX19fV19&Signature=UkwG9f0v2DHpI3RDfK-kGQuSpIhhpAztsNqnI5uJKTFIciPoPiV4LHjkEHqXtv4Y14tSAvY%7Ex3LCKyr8V01mxCa1IxwNzPn7UouCeLdWq7LZV%7ECWzyRYI4iIRZ9QeFIs8thqm98PpmMWRpcsxW2ZopeQJNHIMNaCVoGkKPdBbkkGzIhdbSMFfWknaiB0muubL9zkvYt0DYrBmSKE5%7EBeD85olIXQkT6wtozwEHhoDr8Kv9Yvvvl38JjeyBeqoTcvVBRwrY2d6u1Ad4u3zvytf7f0r9gVR-GeMHjB3OLmjrF-l3U47Lek-hW2nAr-T8tGhbLBMexCO5SQLqazUfTX2g__&Key-Pair-Id=K15QRJLYKIFSLZ&Download-Request-ID=785333870720711"
+
+  tasks:
+    - name: 1. Add OLLAMA_MODELS environment variable to service
+      blockinfile:
+        path: "{{ ollama_service_file }}"
+        block: |
+          Environment="OLLAMA_MODELS={{ model_dir }}"
+        marker: "# {mark} ANSIBLE MANAGED OLLAMA MODELS PATH"
+        insertafter: "Environment=\"OLLAMA_ORIGINS=\\*\""
+        backup: yes
+      notify: restart_ollama
+
+    - name: 2. Ensure correct permissions on model directory
+      file:
+        path: "{{ model_dir }}"
+        state: directory
+        owner: ollama
+        group: ollama
+        mode: '0755'
+        recurse: yes
+
+    - name: 3. Restart Ollama with new configuration
+      systemd:
+        name: ollama
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+
+    - name: 4. Wait for Ollama to be ready
+      wait_for:
+        port: 11434
+        host: 0.0.0.0
+        delay: 10
+        timeout: 60
+
+    - name: 5. Re-pull existing models to new location
+      shell: "ollama pull {{ item }}"
+      loop:
+        - "llama3:8b"
+        - "nous-hermes2:latest"
+      register: repull_result
+
+    - name: 6. Download Llama-3.2 model with meta-url (non-interactive)
+      shell: |
+        . {{ miniconda_path }}/bin/activate {{ ai_env_name }} && \
+        llama model download \
+          --source meta \
+          --model-id {{ additional_model_id }}-QLORA_INT4_EO8 \
+          --meta-url "{{ additional_model_url }}"
+      args:
+        executable: /bin/bash
+      become_user: agent0
+      register: llama32_download
+      timeout: 600
+      ignore_errors: yes
+
+    - name: 7. Verify final results
+      shell: "{{ item }}"
+      loop:
+        - "ollama list"
+        - "ls -la {{ model_dir }}"
+      register: verification_results
+      changed_when: false
+
+    - name: 8. Display corrective action results
+      debug:
+        msg:
+          - "============================================================="
+          - " LLM SERVER 01 CORRECTIVE ACTIONS COMPLETE"
+          - "============================================================="
+          - "🔧 OLLAMA MODELS DIRECTORY: {{ model_dir }}"
+          - "🤖 OLLAMA MODELS:"
+          - "{{ verification_results.results[0].stdout_lines }}"
+          - ""
+          - "📦 STORAGE CONTENTS:"
+          - "{{ verification_results.results[1].stdout_lines }}"
+          - ""
+          - "📥 LLAMA-3.2 DOWNLOAD:"
+          - "{{ 'SUCCESS' if llama32_download.rc == 0 else 'FAILED' }}"
+          - "============================================================="
+
+  handlers:
+    - name: restart_ollama
+      systemd:
+        name: ollama
+        state: restarted
+        daemon_reload: yes

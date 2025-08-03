@@ -1,0 +1,86 @@
+---
+# API Gateway Role - CX-API Gateway Server (.39)
+# Manages FastAPI gateway with load balancing and authentication
+
+# Application Configuration
+app_name: "citadel_api_gateway"
+app_version: "1.0.0"
+app_port: 8000
+app_host: "0.0.0.0"
+app_workers: 4
+
+# Python Environment
+python_version: "3.12"
+virtual_env_path: "/opt/citadel/venv"
+app_directory: "/opt/citadel/api-gateway"
+
+# LLM Server Endpoints (Phase 4 Integration)
+llm_endpoints:
+  chat:
+    primary: "http://192.168.10.29:11434"
+    backup: "http://192.168.10.31:11434"
+    models: ["llama3.1:8b", "qwen2.5:7b", "mistral:7b"]
+  instruct:
+    primary: "http://192.168.10.28:11434"
+    backup: "http://192.168.10.31:11434"
+    models: ["llama3.1:8b-instruct-q4_0", "qwen2.5:7b-instruct", "mistral:7b-instruct"]
+  embedding:
+    primary: "http://192.168.10.31:11434"
+    models: ["nomic-embed-text"]
+
+# Database Connections
+database_config:
+  postgresql:
+    host: "192.168.10.35"
+    port: 5432
+    database: "citadel_rag"
+    user: "citadel_api"
+    pool_size: 20
+    max_overflow: 10
+  redis:
+    host: "192.168.10.35"
+    port: 6379
+    db: 0
+    max_connections: 50
+
+# Vector Database Configuration
+vector_db_config:
+  host: "192.168.10.30"
+  port: 6333
+  api_key: "{{ vault_qdrant_api_key | default('qdrant_api_key_change_me') }}"
+  collections:
+    - "citadel_documents"
+    - "citadel_conversations"
+    - "citadel_knowledge_base"
+
+# Security Configuration
+security:
+  jwt_secret_key: "{{ vault_jwt_secret_key | default('change_me_jwt_secret') }}"
+  jwt_algorithm: "HS256"
+  jwt_expiration_hours: 24
+  cors_origins:
+    - "http://192.168.10.38:3000"  # CX-Web Server
+    - "http://localhost:3000"
+  rate_limiting:
+    requests_per_minute: 60
+    burst_size: 10
+
+# Load Balancing Configuration
+load_balancer:
+  health_check_interval: 30
+  timeout_seconds: 10
+  max_retries: 3
+  retry_delay: 1
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "json"
+  rotation: "1 day"
+  retention: "30 days"
+
+# Monitoring
+monitoring:
+  metrics_enabled: true
+  metrics_port: 9090
+  health_check_endpoint: "/health"

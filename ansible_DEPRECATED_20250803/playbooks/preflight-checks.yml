@@ -1,0 +1,118 @@
+---
+# Pre-flight check for CX AI Infrastructure
+# This playbook checks existing configuration on all AI servers without making changes
+- name: Pre-flight check for AI Processing Tier
+  hosts: ai_servers
+  gather_facts: no
+  vars:
+    miniconda_path: "/home/agent0/miniconda3"
+    model_dir: "/opt/ai_models"
+
+  tasks:
+    - name: 1. Check for NVIDIA Driver
+      shell: "nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n 1"
+      register: nvidia_driver_check
+      changed_when: false
+      failed_when: false
+
+    - name: 2. Check for CUDA Version
+      shell: "nvcc --version | grep 'release' | awk '{print $NF}'"
+      register: cuda_version_check
+      changed_when: false
+      failed_when: false
+
+    - name: 3. Check for cuDNN Version
+      shell: "dpkg-query -W -f='${Version}' libcudnn9-cuda-12 2>/dev/null || echo 'Not Found'"
+      register: cudnn_version_check
+      changed_when: false
+      failed_when: false
+
+    - name: 4. Check for Miniconda installation
+      stat:
+        path: "{{ miniconda_path }}/bin/conda"
+      register: miniconda_check
+
+    - name: 5. Check for Ollama installation
+      shell: "ollama --version 2>/dev/null || echo 'Not Found'"
+      register: ollama_check
+      changed_when: false
+      failed_when: false
+
+    - name: 6. Check Ollama OLLAMA_HOST configuration
+      shell: "grep -q 'OLLAMA_HOST=0.0.0.0' /etc/systemd/system/ollama.service && echo 'Found' || echo 'Not Found'"
+      register: ollama_host_check
+      become: true  # Requires sudo to read the service file
+      changed_when: false
+      failed_when: false
+
+    - name: 7. Check for AI models directory
+      stat:
+        path: "{{ model_dir }}"
+      register: model_dir_check
+
+    - name: 8. Check for installed Ollama models
+      shell: "ollama list 2>/dev/null | grep -v NAME || echo 'No models found'"
+      register: ollama_models_check
+      changed_when: false
+      failed_when: false
+
+    - name: 9. Check for specific embedding models
+      shell: |
+        for model in mxbai-embed-large nomic-embed-text all-minilm:22m; do
+          if ollama list 2>/dev/null | grep -q "$model"; then
+            echo "✓ $model - Installed"
+          else
+            echo "✗ $model - Not Found"
+          fi
+        done
+      register: embedding_models_check
+      changed_when: false
+      failed_when: false
+
+    - name: 10. Check system resources
+      shell: |
+        echo "Memory: $(free -h | grep Mem | awk '{print $2}')"
+        echo "CPU Cores: $(nproc)"
+        echo "Disk Space (/opt/ai_models): $(df -h {{ model_dir }} 2>/dev/null | tail -1 | awk '{print $4}' || echo 'N/A')"
+      register: system_resources_check
+      changed_when: false
+      failed_when: false
+
+    - name: 11. Display Configuration Report
+      debug:
+        msg:
+          - "============================================================================"
+          - " PRE-FLIGHT CHECK REPORT FOR: {{ inventory_hostname }}"
+          - " Server Type: {{ model_type | default('Unknown') }}"
+          - " Expected GPU: {{ gpu_type | default('Unknown') }} ({{ gpu_count | default('Unknown') }} units)"
+          - "============================================================================"
+          - ""
+          - "🎮 GPU & CUDA STACK:"
+          - "  NVIDIA Driver: {{ nvidia_driver_check.stdout | default('❌ Not Found') }}"
+          - "  CUDA Version:  {{ cuda_version_check.stdout | default('❌ Not Found') }}"
+          - "  cuDNN Version: {{ cudnn_version_check.stdout | default('❌ Not Found') }}"
+          - ""
+          - "🐍 PYTHON ENVIRONMENT:"
+          - "  Miniconda:     {{ '✅ Found at ' + miniconda_path if miniconda_check.stat.exists else '❌ Not Found' }}"
+          - ""
+          - "🤖 OLLAMA CONFIGURATION:"
+          - "  Ollama:        {{ ollama_check.stdout | default('❌ Not Found') }}"
+          - "  Ollama Host:   {{ ollama_host_check.stdout | default('❌ Not Configured') }}"
+          - "  Model Dir:     {{ '✅ Found at ' + model_dir if model_dir_check.stat.exists else '❌ Not Found' }}"
+          - ""
+          - "📊 SYSTEM RESOURCES:"
+          - "  {{ system_resources_check.stdout_lines | join('\n  ') }}"
+          - ""
+          - "🧠 INSTALLED MODELS:"
+          - "  {{ ollama_models_check.stdout_lines | join('\n  ') if ollama_models_check.stdout_lines else '❌ No models found' }}"
+          - ""
+          - "🎯 EMBEDDING MODELS STATUS:"
+          - "  {{ embedding_models_check.stdout_lines | join('\n  ') if embedding_models_check.stdout_lines else '❌ Cannot check' }}"
+          - ""
+          - "🎉 DEPLOYMENT READINESS:"
+          - "  GPU Ready: {{ '✅ Yes' if nvidia_driver_check.stdout else '❌ No - NVIDIA driver needed' }}"
+          - "  CUDA Ready: {{ '✅ Yes' if cuda_version_check.stdout and cuda_version_check.stdout != 'Not Found' else '❌ No - CUDA installation needed' }}"
+          - "  Python Ready: {{ '✅ Yes' if miniconda_check.stat.exists else '❌ No - Miniconda installation needed' }}"
+          - "  Ollama Ready: {{ '✅ Yes' if ollama_check.stdout != 'Not Found' else '❌ No - Ollama installation needed' }}"
+          - "  Storage Ready: {{ '✅ Yes' if model_dir_check.stat.exists else '❌ No - Model directory needed' }}"
+          - "============================================================================"

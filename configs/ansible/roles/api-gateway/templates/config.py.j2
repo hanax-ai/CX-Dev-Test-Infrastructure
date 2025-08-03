@@ -1,0 +1,88 @@
+"""
+Configuration management for Citadel Alpha API Gateway
+"""
+
+from pydantic_settings import BaseSettings
+from typing import List, Dict, Any
+import os
+
+class Settings(BaseSettings):
+    # Application
+    app_name: str = "{{ app_name }}"
+    app_version: str = "{{ app_version }}"
+    app_host: str = "{{ app_host }}"
+    app_port: int = {{ app_port }}
+    
+    # Security
+    jwt_secret_key: str = "{{ security.jwt_secret_key }}"
+    jwt_algorithm: str = "{{ security.jwt_algorithm }}"
+    jwt_expiration_hours: int = {{ security.jwt_expiration_hours }}
+    
+    # Database
+    postgresql_host: str = "{{ database_config.postgresql.host }}"
+    postgresql_port: int = {{ database_config.postgresql.port }}
+    postgresql_database: str = "{{ database_config.postgresql.database }}"
+    postgresql_user: str = "{{ database_config.postgresql.user }}"
+    postgresql_password: str = "{{ vault_postgresql_password | default('changeme') }}"
+    
+    redis_host: str = "{{ database_config.redis.host }}"
+    redis_port: int = {{ database_config.redis.port }}
+    redis_db: int = {{ database_config.redis.db }}
+    redis_password: str = "{{ vault_redis_password | default('') }}"
+    
+    # Vector Database
+    qdrant_host: str = "{{ vector_db_config.host }}"
+    qdrant_port: int = {{ vector_db_config.port }}
+    qdrant_api_key: str = "{{ vector_db_config.api_key }}"
+    
+    # LLM Endpoints
+    llm_chat_primary: str = "{{ llm_endpoints.chat.primary }}"
+    llm_chat_backup: str = "{{ llm_endpoints.chat.backup }}"
+    llm_instruct_primary: str = "{{ llm_endpoints.instruct.primary }}"
+    llm_instruct_backup: str = "{{ llm_endpoints.instruct.backup }}"
+    llm_embedding_primary: str = "{{ llm_endpoints.embedding.primary }}"
+    
+    # Load Balancing
+    health_check_interval: int = {{ load_balancer.health_check_interval }}
+    timeout_seconds: int = {{ load_balancer.timeout_seconds }}
+    max_retries: int = {{ load_balancer.max_retries }}
+    retry_delay: int = {{ load_balancer.retry_delay }}
+    
+    # Logging
+    log_level: str = "{{ logging.level }}"
+    log_format: str = "{{ logging.format }}"
+    
+    @property
+    def database_url(self) -> str:
+        return f"postgresql+asyncpg://{self.postgresql_user}:{self.postgresql_password}@{self.postgresql_host}:{self.postgresql_port}/{self.postgresql_database}"
+    
+    @property
+    def redis_url(self) -> str:
+        if self.redis_password:
+            return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+    
+    @property
+    def llm_endpoints_config(self) -> Dict[str, Any]:
+        return {
+            "chat": {
+                "primary": self.llm_chat_primary,
+                "backup": self.llm_chat_backup,
+                "models": {{ llm_endpoints.chat.models | to_json }}
+            },
+            "instruct": {
+                "primary": self.llm_instruct_primary,
+                "backup": self.llm_instruct_backup, 
+                "models": {{ llm_endpoints.instruct.models | to_json }}
+            },
+            "embedding": {
+                "primary": self.llm_embedding_primary,
+                "models": {{ llm_endpoints.embedding.models | to_json }}
+            }
+        }
+    
+    class Config:
+        env_file = ".env"
+        case_sensitive = False
+
+settings = Settings()

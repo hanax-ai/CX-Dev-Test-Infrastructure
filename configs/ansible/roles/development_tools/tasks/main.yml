@@ -1,0 +1,143 @@
+---
+# Development tools and environment setup
+# For CX-Dev Server (192.168.10.33)
+
+- name: Copy development requirements to target server
+  copy:
+    src: "{{ playbook_dir }}/../../requirements-dev.txt"
+    dest: /opt/citadel/requirements-dev.txt
+    owner: agent0
+    group: agent0
+    mode: '0644'
+  become: yes
+
+- name: Install development requirements in virtual environment
+  pip:
+    requirements: /opt/citadel/requirements-dev.txt
+    virtualenv: /opt/citadel/env
+  become_user: agent0
+
+- name: Install additional development packages
+  apt:
+    name:
+      - nodejs
+      - npm
+      - docker.io
+      - docker-compose
+      - sqlite3
+      - postgresql-client
+      - redis-tools
+    state: present
+  become: yes
+
+- name: Install Postman CLI globally via NPM
+  npm:
+    name: postman-cli
+    global: yes
+  become: yes
+
+- name: Add agent0 to docker group
+  user:
+    name: agent0
+    groups: docker
+    append: yes
+  become: yes
+
+- name: Create development workspace directory
+  file:
+    path: /opt/citadel/workspace
+    state: directory
+    owner: agent0
+    group: agent0
+    mode: '0755'
+  become: yes
+
+- name: Create development project templates directory
+  file:
+    path: /opt/citadel/workspace/templates
+    state: directory
+    owner: agent0
+    group: agent0
+    mode: '0755'
+  become: yes
+
+- name: Install VS Code Server (code-server)
+  shell: |
+    curl -fsSL https://code-server.dev/install.sh | sh
+  become: yes
+
+- name: Create code-server configuration directory
+  file:
+    path: /home/agent0/.config/code-server
+    state: directory
+    owner: agent0
+    group: agent0
+    mode: '0755'
+  become: yes
+
+- name: Configure code-server
+  copy:
+    content: |
+      bind-addr: 0.0.0.0:8080
+      auth: password
+      password: citadel-dev-2025
+      cert: false
+    dest: /home/agent0/.config/code-server/config.yaml
+    owner: agent0
+    group: agent0
+    mode: '0600'
+  become: yes
+
+- name: Create systemd service for code-server
+  copy:
+    content: |
+      [Unit]
+      Description=code-server
+      After=network.target
+      
+      [Service]
+      Type=simple
+      User=agent0
+      Group=agent0
+      Environment=PATH=/opt/citadel/env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      ExecStart=/usr/bin/code-server --config /home/agent0/.config/code-server/config.yaml /opt/citadel/workspace
+      Restart=always
+      RestartSec=10
+      
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/code-server.service
+    mode: '0644'
+  become: yes
+
+- name: Enable and start code-server service
+  systemd:
+    name: code-server
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  become: yes
+
+- name: Create development environment verification script
+  copy:
+    content: |
+      #!/bin/bash
+      echo "CX-Dev Server Environment Verification"
+      echo "====================================="
+      echo "Python Version: $(python --version)"
+      echo "Node.js Version: $(node --version)"
+      echo "npm Version: $(npm --version)"
+      echo "Docker Version: $(docker --version)"
+      echo "PostgreSQL Client: $(psql --version)"
+      echo "Redis CLI: $(redis-cli --version)"
+      echo ""
+      echo "Development Packages Installed:"
+      pip list | grep -E "(pytest|black|flake8|mypy|jupyter|fastapi|uvicorn|sqlalchemy|pydantic|requests|httpx)"
+      echo ""
+      echo "Code Server Status:"
+      systemctl status code-server --no-pager -l
+    dest: /opt/citadel/dev_env_check.sh
+    owner: agent0
+    group: agent0
+    mode: '0755'
+  become: yes

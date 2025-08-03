@@ -1,0 +1,81 @@
+---
+# Web Interface Role - CX-Web Server (.38)
+# Manages Open WebUI with Clerk authentication
+
+# Application Configuration
+app_name: "citadel_web_ui"
+app_version: "1.0.0"
+app_port: 3000
+app_host: "0.0.0.0"
+
+# Node.js Configuration
+nodejs_version: "18"
+npm_registry: "https://registry.npmjs.org/"
+app_directory: "/opt/citadel/web-ui"
+
+# Open WebUI Configuration
+webui_config:
+  site_name: "Citadel Alpha"
+  site_description: "Advanced AI Processing Platform"
+  default_user_role: "user"
+  enable_signup: false
+  enable_login_form: true
+  default_models: {{ llm_endpoints.chat.models | to_json }}
+
+# API Gateway Integration
+api_gateway:
+  host: "192.168.10.39"
+  port: 8000
+  base_url: "http://192.168.10.39:8000"
+  endpoints:
+    chat: "/api/v1/chat"
+    rag: "/api/v1/rag"
+    auth: "/api/v1/auth"
+    models: "/api/v1/models"
+
+# Clerk Authentication
+clerk_config:
+  frontend_api: "{{ vault_clerk_frontend_api | default('clerk_frontend_api_change_me') }}"
+  publishable_key: "{{ vault_clerk_publishable_key | default('pk_test_change_me') }}"
+  secret_key: "{{ vault_clerk_secret_key | default('sk_test_change_me') }}"
+  jwt_key: "{{ vault_clerk_jwt_key | default('clerk_jwt_change_me') }}"
+
+# Database Connection (for session management)
+database_config:
+  postgresql:
+    host: "192.168.10.35"
+    port: 5432
+    database: "citadel_sessions"
+    user: "citadel_web"
+
+# Security Configuration
+security:
+  session_secret: "{{ vault_session_secret | default('change_me_session_secret') }}"
+  csrf_protection: true
+  secure_cookies: true
+  cors_origins:
+    - "http://192.168.10.39:8000"  # API Gateway
+    - "http://localhost:3000"
+
+# Performance Settings
+performance:
+  max_request_size: "10mb"
+  timeout: 30000
+  keep_alive_timeout: 5000
+  compression: true
+
+# Feature Flags
+features:
+  enable_rag: true
+  enable_document_upload: true
+  enable_conversation_history: true
+  enable_model_switching: true
+  enable_admin_panel: false
+
+# Styling and Branding
+branding:
+  primary_color: "#1976d2"
+  secondary_color: "#dc004e"
+  logo_url: "/assets/citadel-logo.svg"
+  favicon_url: "/assets/favicon.ico"
+  custom_css: true
