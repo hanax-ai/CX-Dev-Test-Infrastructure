@@ -33,9 +33,19 @@
         - pm2
         - yarn
 
-- name: Setup application directory
+- name: Deploy Open WebUI with customizations
   block:
-    - name: Create application directory
+    - name: Clone Open WebUI repository
+      git:
+        repo: "https://github.com/open-webui/open-webui.git"
+        dest: "{{ app_directory }}"
+        version: "main"
+        force: yes
+      become_user: www-data
+
+- name: Setup application directory structure
+  block:
+    - name: Ensure application directory has correct ownership
       file:
         path: "{{ app_directory }}"
         state: directory
@@ -51,7 +61,7 @@
         group: www-data
         mode: '0755'
 
-    - name: Create assets directory
+    - name: Create assets directory (if not exists from clone)
       file:
         path: "{{ app_directory }}/public/assets"
         state: directory
@@ -59,16 +69,27 @@
         group: www-data
         mode: '0755'
 
-- name: Deploy Open WebUI with customizations
-  block:
-    - name: Clone Open WebUI repository
-      git:
-        repo: "https://github.com/open-webui/open-webui.git"
-        dest: "{{ app_directory }}"
-        version: "main"
-        force: yes
-      become_user: www-data
+    - name: Ensure styles directory exists
+      file:
+        path: "{{ app_directory }}/src/styles"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
 
+    - name: Ensure components directory exists
+      file:
+        path: "{{ app_directory }}/src/components"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+- name: Configure Open WebUI application
+  block:
+
+- name: Configure Open WebUI application
+  block:
     - name: Create custom package.json
       template:
         src: package.json.j2
@@ -101,14 +122,6 @@
 
 - name: Create custom components and pages
   block:
-    - name: Create components directory
-      file:
-        path: "{{ app_directory }}/src/components"
-        state: directory
-        owner: www-data
-        group: www-data
-        mode: '0755'
-
     - name: Create custom authentication component
       template:
         src: ClerkAuth.svelte.j2
@@ -248,6 +261,17 @@
 
 - name: Final validation
   block:
+    - name: Verify critical directories exist
+      stat:
+        path: "{{ item }}"
+      register: dir_check
+      failed_when: not dir_check.stat.exists
+      loop:
+        - "{{ app_directory }}/logs"
+        - "{{ app_directory }}/public/assets"
+        - "{{ app_directory }}/src/components"
+        - "{{ app_directory }}/src/styles"
+
     - name: Wait for application to be ready
       uri:
         url: "http://127.0.0.1:{{ app_port }}"

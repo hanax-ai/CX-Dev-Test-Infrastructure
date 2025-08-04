@@ -7,6 +7,10 @@
   vars:
     model_dir: "/opt/ai_models"
     ollama_service_file: "/etc/systemd/system/ollama.service"
+    # Ollama installer checksum - Update when Ollama releases new installer
+    # Last verified: 2025-08-04
+    # To update: curl -fsSL https://ollama.com/install.sh | sha256sum
+    ollama_installer_checksum: "sha256:9f5f4c4ed21821ba9b847bf3607ae75452283276cd8f52d2f2b38ea9f27af344"
     embedding_models:
       - name: "mxbai-embed-large"
         tag: "335m"
@@ -36,12 +40,13 @@
           - "CUDA Environment Verified:"
           - "{{ cuda_verification.stdout_lines }}"
 
-    - name: 3. Download Ollama installer script
+    - name: 3. Download Ollama installer script with integrity verification
       get_url:
         url: https://ollama.com/install.sh
         dest: /tmp/ollama-install.sh
         mode: '0755'
         timeout: 30
+        checksum: "{{ ollama_installer_checksum }}"
       register: ollama_script
 
     - name: 4. Install Ollama from verified script
@@ -50,6 +55,25 @@
         creates: /usr/local/bin/ollama
       register: ollama_install
       when: ollama_script is succeeded
+
+    - name: 4.1. Verify Ollama installation
+      stat:
+        path: /usr/local/bin/ollama
+      register: ollama_binary
+      failed_when: not ollama_binary.stat.exists
+
+    - name: 4.2. Display installation verification
+      debug:
+        msg:
+          - "Ollama installation verified: /usr/local/bin/ollama exists"
+          - "Installer checksum validated: {{ ollama_installer_checksum }}"
+
+    - name: 4.3. Log security verification
+      lineinfile:
+        path: "/var/log/ollama-deployment-security.log"
+        line: "{{ ansible_date_time.iso8601 }} - Ollama installer checksum verified: {{ ollama_installer_checksum }}"
+        create: yes
+        mode: '0640'
 
     - name: 5. Check if Ollama service file exists
       stat:
@@ -190,7 +214,7 @@
           - "  GPU Acceleration: {{ 'ENABLED' if cuda_verification.rc == 0 else 'DISABLED' }}"
           - ""
           - "🤖 EMBEDDING MODELS DEPLOYED:"
-          - "{{ model_summary }}"
+          - "{{ model_summary | join('\n') }}"
           - ""
           - "🔧 CONFIGURATION:"
           - "  Model Directory: {{ model_dir }}"

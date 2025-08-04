@@ -26,7 +26,7 @@ llm_endpoints:
     models: ["llama3.1:8b-instruct-q4_0", "qwen2.5:7b-instruct", "mistral:7b-instruct"]
   embedding:
     primary: "http://192.168.10.31:11434"
-    models: ["nomic-embed-text"]
+    models: ["nomic-embed-text:v1.5"]
 
 # Database Connections
 database_config:

@@ -4,8 +4,8 @@
 
 - name: Abort deployment if not running on orchestration server
   fail:
-    msg: "This role should only run on the orchestration server (hx-orchestration-server)"
-  when: inventory_hostname != 'hx-orchestration-server'
+    msg: "This role should only run on the orchestration server ({{ embedding_host | default('hx-orc-server') }})"
+  when: inventory_hostname != (embedding_host | default('hx-orc-server'))
 
 - name: Create deployment log file
   ansible.builtin.file:
@@ -92,7 +92,8 @@
   register: model_pulls
   retries: "{{ retry_attempts }}"
   delay: "{{ retry_delay }}"
-  until: model_pulls.rc == 0
+  until: model_pulls is succeeded
+  failed_when: model_pulls is failed
 
 - name: Verify model installations
   ansible.builtin.command:
@@ -134,7 +135,7 @@
     block: |
       === Deployment Results ===
       {% for result in model_pulls.results %}
-      {{ embedding_models[loop.index0].name }}: {{ 'SUCCESS' if result.rc == 0 else 'FAILED' }}
+      {{ embedding_models[loop.index0].name }}: {{ 'SUCCESS' if result is succeeded else 'FAILED' }}
       {% endfor %}
       {% if test_endpoints %}
       Local API Tests:
@@ -155,7 +156,7 @@
       Server: {{ inventory_hostname }} ({{ ansible_host }})
       Models Installed:
       {% for model in embedding_models %}
-      - {{ model.name }} ({{ model.size }}): {{ 'SUCCESS' if model_pulls.results[loop.index0].rc == 0 else 'FAILED' }}
+      - {{ model.name }} ({{ model.size }}): {{ 'SUCCESS' if model_pulls.results[loop.index0] is succeeded else 'FAILED' }}
       {% endfor %}
       
       API Endpoints:

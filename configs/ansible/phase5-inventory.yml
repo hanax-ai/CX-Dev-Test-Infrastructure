@@ -79,7 +79,7 @@ all:
           server_role: "orchestration_embedding"
           ollama_port: 11434
           models:
-            - "nomic-embed-text"
+            - "nomic-embed-text:v1.5"
 
 # Group Variables
 database_servers:

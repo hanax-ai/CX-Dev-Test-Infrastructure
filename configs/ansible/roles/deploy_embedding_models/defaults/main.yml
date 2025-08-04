@@ -4,13 +4,13 @@
 
 # Embedding models to deploy
 embedding_models:
-  - name: "mxbai-embed-large"
+  - name: "mxbai-embed-large:335m"
     size: "334M"
     description: "High-quality multilingual embeddings"
-  - name: "nomic-embed-text"
+  - name: "nomic-embed-text:v1.5"
     size: "137M" 
     description: "Efficient text embeddings"
-  - name: "all-minilm"
+  - name: "all-minilm:33m"
     size: "23M"
     description: "Lightweight sentence embeddings"
 
@@ -18,6 +18,9 @@ embedding_models:
 ollama_port: 11434
 ollama_user: "agent0"
 model_storage_path: "/usr/share/ollama/.ollama/models"
+
+# Target server configuration
+embedding_host: "hx-orc-server"  # Default orchestration server hostname
 
 # Deployment configuration
 deployment_log_file: "/var/log/cx-embedding-deployment.log"

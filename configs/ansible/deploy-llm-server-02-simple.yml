@@ -7,6 +7,9 @@
     model_dir: "/opt/ai_models"
     ollama_service_user: "ollama"
     ollama_port: 11434
+    # Security: SHA256 checksum for installer integrity verification
+    # Update this hash when Ollama releases new versions
+    ollama_install_sha256: "9f5f4c4ed21821ba9b847bf3607ae75452283276cd8f52d2f2b38ea9f27af344"
 
   pre_tasks:
     - name: Verify this is the correct server
@@ -21,7 +24,7 @@
 
     - name: Display disk space
       debug:
-        msg: "Available disk space: {{ disk_space.stdout_lines[1] }}"
+        msg: "Available disk space: {{ (disk_space.stdout_lines | last) | default('unknown') }}"
 
   tasks:
     - name: 1. Check current GPU status
@@ -55,7 +58,7 @@
 
     - name: 6. Ensure ollama system user exists
       user:
-        name: ollama
+        name: "{{ ollama_service_user }}"
         system: yes
         shell: /usr/sbin/nologin
         home: /var/lib/ollama
@@ -69,13 +72,14 @@
       failed_when: false
       when: ollama_exists.rc == 0
 
-    - name: 8. Download Ollama installer
+    - name: 8. Download Ollama installer with integrity verification
       get_url:
         url: https://ollama.com/install.sh
         dest: /tmp/ollama_install.sh
         mode: '0755'
         force: yes
         timeout: 30
+        checksum: "sha256:{{ ollama_install_sha256 }}"
 
     - name: 9. Run Ollama installer (idempotent)
       command: /tmp/ollama_install.sh
@@ -100,46 +104,49 @@
           RestartSec=3
           Environment="OLLAMA_HOST=0.0.0.0:{{ ollama_port }}"
           Environment="OLLAMA_ORIGINS=*"
-          Environment="OLLAMA_MODELS=/var/lib/ollama/models"
+          Environment="OLLAMA_MODELS={{ model_dir }}"
           # Security hardening
           NoNewPrivileges=true
           PrivateTmp=true
           ProtectSystem=strict
           ProtectHome=true
-          ReadWritePaths=/var/lib/ollama
+          ReadWritePaths=/var/lib/ollama {{ model_dir }}
           
           [Install]
           WantedBy=multi-user.target
         dest: /etc/systemd/system/ollama.service
         backup: yes
         mode: '0644'
+      notify: reload systemd
 
     - name: 11. Create AI models directory
       file:
         path: "{{ model_dir }}"
         state: directory
-        owner: agent0
-        group: agent0
+        owner: "{{ ollama_service_user }}"
+        group: "{{ ollama_service_user }}"
         mode: '0755'
 
-    - name: 12. Reload systemd and start Ollama
+    - name: 11.1. Ensure systemd reload happens before service start
+      meta: flush_handlers
+
+    - name: 12. Start and enable Ollama service
       systemd:
         name: ollama
         state: started
         enabled: yes
-        daemon_reload: yes
 
     - name: 13. Wait for service to be ready
       wait_for:
         port: "{{ ollama_port }}"
-        host: "{{ ansible_default_ipv4.address | default('127.0.0.1') }}"
+        host: "127.0.0.1"
         delay: 5
         timeout: 60
         msg: "Ollama service failed to start within timeout period"
 
     - name: 14. Verify service is responding
       uri:
-        url: "http://{{ ansible_default_ipv4.address }}:{{ ollama_port }}/api/version"
+        url: "http://{{ ansible_default_ipv4.address | default('127.0.0.1') }}:{{ ollama_port }}/api/version"
         method: GET
         timeout: 10
       register: version_check
@@ -149,7 +156,7 @@
 
     - name: 15. Test basic API connectivity
       uri:
-        url: "http://{{ ansible_default_ipv4.address }}:{{ ollama_port }}/api/tags"
+        url: "http://{{ ansible_default_ipv4.address | default('127.0.0.1') }}:{{ ollama_port }}/api/tags"
         method: GET
         timeout: 10
       register: api_test
@@ -163,7 +170,7 @@
 
     - name: 17. List current models
       uri:
-        url: "http://{{ ansible_default_ipv4.address }}:{{ ollama_port }}/api/tags"
+        url: "http://{{ ansible_default_ipv4.address | default('127.0.0.1') }}:{{ ollama_port }}/api/tags"
         method: GET
       register: current_models
 
@@ -198,7 +205,7 @@
 
     - name: Final validation - Test API endpoint
       uri:
-        url: "http://{{ ansible_default_ipv4.address }}:{{ ollama_port }}/api/version"
+        url: "http://{{ ansible_default_ipv4.address | default('127.0.0.1') }}:{{ ollama_port }}/api/version"
         method: GET
         timeout: 5
       register: final_api_check
@@ -218,11 +225,12 @@
           - " BASIC OLLAMA SERVICE DEPLOYMENT COMPLETE"
           - "============================================================="
           - "🚀 SERVICE STATUS:"
-          - "  API Endpoint: http://{{ ansible_default_ipv4.address }}:{{ ollama_port }}"
+          - "  API Endpoint: http://{{ ansible_default_ipv4.address | default('127.0.0.1') }}:{{ ollama_port }}"
           - "  Status: {{ 'RUNNING' if api_test.status == 200 else 'FAILED' }}"
+          - "  Models Directory: {{ model_dir }} (owned by {{ ollama_service_user }})"
           - ""
           - "📋 NEXT STEPS TO COMPLETE MANUALLY:"
-          - "  1. SSH to server: ssh agent0@{{ ansible_default_ipv4.address }}"
+          - "  1. SSH to server: ssh agent0@{{ ansible_default_ipv4.address | default('127.0.0.1') }}"
           - "  2. Remove unwanted model: ollama rm llama3.2:3b"
           - "  3. Test existing models:"
           - "     ollama run qwen3:8b"
