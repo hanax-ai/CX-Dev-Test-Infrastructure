@@ -9,31 +9,37 @@
     ollama_service_file: "/etc/systemd/system/ollama.service"
     miniconda_path: "/home/agent0/miniconda3"
     ai_env_name: "ai_env"
-    additional_model_id: "Llama-3.2-3B-Instruct"
-    additional_model_url: "https://llama3-2-lightweight.llamameta.net/*?Policy=eyJTdGF0ZW1lbnQiOlt7InVuaXF1ZV9oYXNoIjoiZng5YzkxamYyOTFta283OWdrMDZuNGc5IiwiUmVzb3VyY2UiOiJodHRwczpcL1wvbGxhbWEzLTItbGlnaHR3ZWlnaHQubGxhbWFtZXRhLm5ldFwvKiIsIkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc1NDE1MTk4NX19fV19&Signature=UkwG9f0v2DHpI3RDfK-kGQuSpIhhpAztsNqnI5uJKTFIciPoPiV4LHjkEHqXtv4Y14tSAvY%7Ex3LCKyr8V01mxCa1IxwNzPn7UouCeLdWq7LZV%7ECWzyRYI4iIRZ9QeFIs8thqm98PpmMWRpcsxW2ZopeQJNHIMNaCVoGkKPdBbkkGzIhdbSMFfWknaiB0muubL9zkvYt0DYrBmSKE5%7EBeD85olIXQkT6wtozwEHhoDr8Kv9Yvvvl38JjeyBeqoTcvVBRwrY2d6u1Ad4u3zvytf7f0r9gVR-GeMHjB3OLmjrF-l3U47Lek-hW2nAr-T8tGhbLBMexCO5SQLqazUfTX2g__&Key-Pair-Id=K15QRJLYKIFSLZ&Download-Request-ID=785333870720711"
+    # NOTE: Using ollama pull for standard models instead of presigned URLs for idempotency
+    additional_models:
+      - "llama3.2:3b"  # Use standard Ollama registry instead of presigned URL
 
   tasks:
-    - name: 1. Add OLLAMA_MODELS environment variable
-      blockinfile:
-        path: "{{ ollama_service_file }}"
-        block: |
+    - name: 1. Create systemd override directory for Ollama
+      file:
+        path: "/etc/systemd/system/ollama.service.d"
+        state: directory
+        mode: '0755'
+
+    - name: 2. Configure Ollama service environment via drop-in
+      copy:
+        dest: "/etc/systemd/system/ollama.service.d/override.conf"
+        content: |
+          [Service]
           Environment="OLLAMA_HOST=0.0.0.0"
           Environment="OLLAMA_ORIGINS=*"
           Environment="OLLAMA_MODELS={{ model_dir }}"
           Environment="CUDA_VISIBLE_DEVICES=0,1"
           Environment="PATH=/usr/local/cuda-12.9/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
           Environment="LD_LIBRARY_PATH=/usr/local/cuda-12.9/lib64"
-        marker: "# {mark} ANSIBLE MANAGED OLLAMA ENVIRONMENT"
-        insertafter: "\\[Service\\]"
-        backup: yes
+        mode: '0644'
       notify: restart_ollama_fix
 
-    - name: 2. Stop Ollama service
+    - name: 3. Stop Ollama service
       systemd:
         name: ollama
         state: stopped
 
-    - name: 3. Ensure proper ownership of model directory
+    - name: 4. Ensure proper ownership of model directory
       file:
         path: "{{ model_dir }}"
         state: directory
@@ -42,21 +48,21 @@
         mode: '0755'
         recurse: yes
 
-    - name: 4. Reload systemd and restart Ollama
+    - name: 5. Reload systemd and restart Ollama
       systemd:
         name: ollama
         state: started
         enabled: yes
         daemon_reload: yes
 
-    - name: 5. Wait for Ollama to be ready
+    - name: 6. Wait for Ollama to be ready
       wait_for:
         port: 11434
         host: 0.0.0.0
         delay: 10
         timeout: 60
 
-    - name: 6. Test Ollama API accessibility
+    - name: 7. Test Ollama API accessibility
       uri:
         url: "http://{{ ansible_default_ipv4.address }}:11434/api/tags"
         method: GET
@@ -65,7 +71,7 @@
       retries: 3
       delay: 5
 
-    - name: 7. Re-pull existing models to new location
+    - name: 8. Re-pull existing models to new location with retry logic
       shell: "ollama pull {{ item }}"
       loop:
         - "llama3:8b"
@@ -75,30 +81,32 @@
         OLLAMA_HOST: "http://localhost:11434"
       retries: 2
       delay: 10
+      until: model_repulls.rc == 0
 
-    - name: 8. Download Llama-3.2-3B model (manual approach)
-      shell: |
-        source {{ miniconda_path }}/bin/activate {{ ai_env_name }}
-        echo "{{ additional_model_url }}" | llama model download --source meta --model-id {{ additional_model_id }}
-      args:
-        executable: /bin/bash
-      become_user: agent0
-      register: llama32_download
-      failed_when: false
+    - name: 9. Pull additional models (using Ollama registry)
+      shell: "ollama pull {{ item }}"
+      loop: "{{ additional_models }}"
+      register: additional_model_pulls
+      environment:
+        OLLAMA_HOST: "http://localhost:11434"
+      retries: 2
+      delay: 10
+      until: additional_model_pulls.rc == 0
+      failed_when: false  # Make this optional since model may not be available
 
-    - name: 9. Verify models in new location
+    - name: 10. Verify models in new location
       shell: "ls -la {{ model_dir }}/"
       register: model_directory_contents
       changed_when: false
 
-    - name: 10. Verify all models via API
+    - name: 11. Verify all models via API
       uri:
         url: "http://{{ ansible_default_ipv4.address }}:11434/api/tags"
         method: GET
         timeout: 10
       register: final_model_check
 
-    - name: 11. Display corrective action results
+    - name: 12. Display corrective action results
       debug:
         msg:
           - "============================================================="
@@ -107,6 +115,7 @@
           - "🔧 CONFIGURATION FIXES:"
           - "  OLLAMA_MODELS: {{ model_dir }}"
           - "  Service Status: {{ 'RUNNING' if ollama_api_test.status == 200 else 'FAILED' }}"
+          - "  Config Method: systemd drop-in (idempotent)"
           - ""
           - "📁 MODEL DIRECTORY CONTENTS:"
           - "{{ model_directory_contents.stdout_lines }}"
@@ -114,8 +123,8 @@
           - "🤖 MODELS VIA API:"
           - "{{ final_model_check.json.models | length }} models detected"
           - ""
-          - "🎯 LLAMA-3.2 DOWNLOAD:"
-          - "  Status: {{ 'SUCCESS' if llama32_download.rc == 0 else 'FAILED' }}"
+          - "🎯 ADDITIONAL MODELS:"
+          - "  Status: {{ 'SUCCESS' if additional_model_pulls is succeeded else 'OPTIONAL - Not Available' }}"
           - "============================================================="
 
   handlers:

@@ -1,12 +1,28 @@
 #SPDX-License-Identifier: MIT-0
 galaxy_info:
-  author: your name
-  description: your role description
-  company: your company (optional)
+  author: CX R&D Infrastructure Team
+  description: Deploy embedding models to Ollama on orchestration server
+  company: CX Infrastructure
+  license: MIT
 
-  # If the issue tracker for your role is not on github, uncomment the
-  # next line and provide a value
-  # issue_tracker_url: http://example.com/issue/tracker
+  min_ansible_version: 2.12
+
+  platforms:
+  - name: Ubuntu
+    versions:
+    - "20.04"
+    - "22.04"
+
+  galaxy_tags:
+    - ollama
+    - embeddings
+    - ai
+    - ml
+    - nlp
+
+dependencies:
+  - role: ollama_server
+    when: ensure_ollama_installed | default(false)
 
   # Choose a valid license ID from https://spdx.org - some suggested licenses:
   # - BSD-3-Clause (default)

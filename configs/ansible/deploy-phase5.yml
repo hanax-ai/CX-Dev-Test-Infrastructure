@@ -1,5 +1,5 @@
 ---
-- name: Citadel Alpha - Phase 5: API Gateway & Web Services Deployment
+- name: "Citadel Alpha - Phase 5: API Gateway & Web Services Deployment"
   hosts: phase5_servers
   gather_facts: yes
   become: yes
@@ -42,23 +42,61 @@
   pre_tasks:
     - name: Phase 5 Pre-flight Validation
       block:
+        - name: Verify server belongs to phase5_servers group
+          fail:
+            msg: "This server ({{ inventory_hostname }}) is not in the phase5_servers group"
+          when: inventory_hostname not in groups['phase5_servers']
+
+        - name: Check available disk space
+          shell: df -h /opt /var /tmp
+          register: disk_space
+          changed_when: false
+
+        - name: Display disk space status
+          debug:
+            msg:
+              - "=== Disk Space Check ==="
+              - "{{ disk_space.stdout_lines }}"
+
         - name: Verify Phase 4 LLM server connectivity
           uri:
-            url: "http://{{ item.ip }}:{{ item.port }}/api/tags"
+            url: "{{ (tls_enabled | default(false)) | ternary('https', 'http') }}://{{ item.ip }}:{{ item.port }}/api/tags"
             method: GET
             timeout: 10
+            validate_certs: "{{ tls_enabled | default(false) }}"
           loop: "{{ llm_servers }}"
           register: llm_connectivity
           failed_when: false
           
         - name: Display Phase 4 dependency status
           debug:
+            msg: "{{ item.name }} ({{ item.role }}): {{ (llm_connectivity.results | selectattr('item.name', 'equalto', item.name) | first).status == 200 | ternary('ONLINE', 'OFFLINE') }}"
+          loop: "{{ llm_servers }}"
+
+        - name: Assess Phase 4 dependencies
+          set_fact:
+            phase4_ready: "{{ (llm_connectivity.results | map(attribute='status') | select('equalto', 200) | list | length) == (llm_servers | length) }}"
+
+        - name: Display Phase 5 pre-flight summary
+          debug:
             msg:
               - "=== Phase 5 Pre-flight Check ==="
-              - "LLM Server 01 (Chat): {{ 'ONLINE' if llm_connectivity.results[0].status == 200 else 'OFFLINE' }}"
-              - "LLM Server 02 (Instruct): {{ 'ONLINE' if llm_connectivity.results[1].status == 200 else 'OFFLINE' }}"
-              - "Orchestration Server: {{ 'ONLINE' if llm_connectivity.results[2].status == 200 else 'OFFLINE' }}"
+              - "Phase 4 Dependencies: {{ 'ALL ONLINE' if phase4_ready else 'SOME OFFLINE' }}"
+              - "TLS Security: {{ 'ENABLED' if tls_enabled else 'DISABLED' }}"
               - "Phase 5 deployment proceeding..."
+
+        - name: Log pre-flight results
+          lineinfile:
+            path: "/var/log/phase5-deployment.log"
+            line: "Phase 5 pre-flight check completed at {{ ansible_date_time.iso8601 }} - Phase 4 dependencies: {{ 'READY' if phase4_ready else 'DEGRADED' }}"
+            create: yes
+      rescue:
+        - name: Pre-flight validation failed
+          debug:
+            msg:
+              - "⚠️  Phase 5 pre-flight validation encountered issues"
+              - "Some checks may have failed - review output above"
+              - "Deployment will continue but may encounter issues"
 
   tasks:
     - name: 1. System preparation and updates
@@ -105,16 +143,16 @@
 
   roles:
     - role: database-optimization
-      when: inventory_hostname in groups['database_servers']
+      when: inventory_hostname in groups.get('database_servers', [])
       
     - role: vector-database
-      when: inventory_hostname in groups['vector_db_servers']
+      when: inventory_hostname in groups.get('vector_db_servers', [])
       
     - role: api-gateway
-      when: inventory_hostname in groups['api_gateway_servers']
+      when: inventory_hostname in groups.get('api_gateway_servers', [])
       
     - role: web-interface
-      when: inventory_hostname in groups['web_servers']
+      when: inventory_hostname in groups.get('web_servers', [])
 
   post_tasks:
     - name: Phase 5 deployment validation
@@ -129,7 +167,25 @@
             - redis
           failed_when: false
           register: service_status
-          
+          when: item in ansible_facts.services or item == 'nginx' or item == 'postgresql' or item == 'redis'
+
+        - name: Calculate service health score
+          set_fact:
+            services_healthy: "{{ (service_status.results | default([]) | selectattr('state', 'defined') | selectattr('state', 'equalto', 'started') | list | length) | string }}"
+            total_services: "{{ (service_status.results | default([]) | length) | string }}"
+
+        - name: Test API endpoints if available
+          uri:
+            url: "http://{{ ansible_default_ipv4.address }}:{{ item.port }}/{{ item.endpoint }}"
+            method: GET
+            timeout: 5
+          loop:
+            - { port: 8000, endpoint: "health" }     # API Gateway
+            - { port: 80, endpoint: "" }             # Web Interface  
+            - { port: 6333, endpoint: "health" }     # Qdrant
+          register: endpoint_tests
+          failed_when: false
+
         - name: Generate Phase 5 deployment report
           debug:
             msg:
@@ -141,9 +197,10 @@
               - "  Version: {{ deployment_version }}"
               - "  Timestamp: {{ phase5_timestamp }}"
               - "  Target Role: {{ group_names | join(', ') }}"
+              - "  Services Health: {{ services_healthy }}/{{ total_services }} services running"
               - ""
               - "🔗 SERVICE INTEGRATION:"
-              - "  Phase 4 Dependencies: {{ llm_servers | length }} LLM servers validated"
+              - "  Phase 4 Dependencies: {{ 'READY' if phase4_ready | default(false) else 'DEGRADED' }}"
               - "  Network Security: UFW firewall configured"
               - "  TLS Security: {{ 'ENABLED' if tls_enabled else 'DISABLED' }}"
               - ""
@@ -165,11 +222,29 @@
                 "ip_address": "{{ ansible_default_ipv4.address }}",
                 "roles": {{ group_names | to_json }},
                 "llm_dependencies": {{ llm_servers | to_json }},
-                "services_status": "{{ service_status | default('unknown') }}"
+                "phase4_ready": {{ phase4_ready | default(false) | to_json }},
+                "services_status": {{ service_status | default({}) | to_json }},
+                "services_healthy": "{{ services_healthy | default(0) }}",
+                "total_services": "{{ total_services | default(0) }}",
+                "deployment_success": {{ (services_healthy | default(0) | int > 0) | to_json }}
               }
             dest: "/tmp/phase5_deployment_{{ inventory_hostname }}_{{ ansible_date_time.epoch }}.json"
+            mode: '0644'
           delegate_to: localhost
           become: false
+
+        - name: Log deployment completion
+          lineinfile:
+            path: "/var/log/phase5-deployment.log"
+            line: "Phase 5 deployment completed at {{ ansible_date_time.iso8601 }} - Services: {{ services_healthy | default(0) }}/{{ total_services | default(0) }} healthy"
+            create: yes
+      rescue:
+        - name: Handle deployment validation errors
+          debug:
+            msg:
+              - "⚠️  Phase 5 deployment validation encountered issues"
+              - "Some services may not be running correctly"
+              - "Check individual service status manually"
 
   handlers:
     - name: restart nginx

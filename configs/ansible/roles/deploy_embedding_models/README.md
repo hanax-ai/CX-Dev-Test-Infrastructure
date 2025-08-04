@@ -1,7 +1,121 @@
-Role Name
-=========
+# Deploy Embedding Models Role
 
-A brief description of the role goes here.
+## Overview
+
+This role deploys embedding models to the Ollama server on the CX orchestration server. It addresses all security and structural issues identified in the previous deployment approach.
+
+## Features
+
+- **Security First**: Validates server identity before deployment
+- **Comprehensive Logging**: Detailed deployment logs with timestamps
+- **Idempotent Operations**: Safe to run multiple times
+- **Error Handling**: Robust retry logic and validation
+- **Production Ready**: Full monitoring and testing capabilities
+
+## Models Deployed
+
+| Model Name | Size | Description |
+|------------|------|-------------|
+| mxbai-embed-large | 334M | High-quality multilingual embeddings |
+| nomic-embed-text | 137M | Efficient text embeddings |
+| all-minilm | 23M | Lightweight sentence embeddings |
+
+## Requirements
+
+- Ollama server must be installed and running
+- CUDA-capable GPU (validated during deployment)
+- Sufficient disk space for models
+- Network connectivity for model downloads
+
+## Variables
+
+### Default Variables (`defaults/main.yml`)
+
+```yaml
+# Embedding models configuration
+embedding_models:
+  - name: "mxbai-embed-large"
+    size: "334M"
+    description: "High-quality multilingual embeddings"
+  # ... additional models
+
+# Ollama configuration
+ollama_port: 11434
+ollama_user: "agent0"
+model_storage_path: "/usr/share/ollama/.ollama/models"
+
+# Deployment settings
+deployment_log_file: "/var/log/cx-embedding-deployment.log"
+retry_attempts: 3
+retry_delay: 30
+
+# Feature flags
+verify_installations: true
+test_endpoints: true
+```
+
+## Security Improvements
+
+### 1. Server Identity Validation
+- **Issue Fixed**: Prevents accidental deployment to wrong servers
+- **Implementation**: Pre-flight check ensures only orchestration server runs deployment
+
+### 2. Secure Logging
+- **Issue Fixed**: Multi-line log entries properly formatted
+- **Implementation**: Uses `blockinfile` instead of `lineinfile` for complex log entries
+
+### 3. No Insecure Downloads
+- **Issue Fixed**: Eliminates curl-pipe-to-shell installations
+- **Implementation**: Validates existing Ollama installation, fails safely if missing
+
+## Usage
+
+### Basic Deployment
+```yaml
+- hosts: hx-orchestration-server
+  roles:
+    - deploy_embedding_models
+```
+
+### Custom Configuration
+```yaml
+- hosts: hx-orchestration-server
+  roles:
+    - role: deploy_embedding_models
+      vars:
+        retry_attempts: 5
+        test_endpoints: false
+        deployment_log_file: "/var/log/custom-embedding-deploy.log"
+```
+
+## Error Handling
+
+The role includes comprehensive error handling:
+
+1. **Pre-flight Checks**:
+   - Server identity validation
+   - Ollama installation verification
+   - CUDA availability confirmation
+   - Disk space assessment
+
+2. **Deployment Resilience**:
+   - Retry logic for network operations
+   - Service readiness verification
+   - Comprehensive status logging
+
+3. **Post-deployment Validation**:
+   - API endpoint testing
+   - Model functionality verification
+   - Remote accessibility confirmation
+
+## Integration
+
+This role integrates with the CX R&D Infrastructure:
+
+- **API Gateway**: Embedding endpoints accessible via gateway
+- **Vector Database**: Models support Qdrant vector operations
+- **Web Interface**: Models available for embedding operations
+- **Monitoring**: Deployment logged for audit trail
 
 Requirements
 ------------

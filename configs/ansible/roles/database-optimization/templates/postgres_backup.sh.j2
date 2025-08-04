@@ -4,26 +4,76 @@
 
 BACKUP_DIR="/var/backups/postgresql"
 RETENTION_DAYS="{{ backup_retention_days }}"
+
+# Validate required variables
+if [[ -z "$RETENTION_DAYS" || ! "$RETENTION_DAYS" =~ ^[0-9]+$ ]]; then
+    echo "Error: RETENTION_DAYS must be a positive integer"
+    exit 1
+fi
+
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
+# Prevent concurrent backup runs
+LOCK_FILE="/var/run/postgresql_backup.lock"
+exec 200>"$LOCK_FILE"
+if ! flock -n 200; then
+    echo "Error: Another backup process is already running"
+    exit 1
+fi
+
+# Cleanup lock file on exit
+trap 'rm -f "$LOCK_FILE"' EXIT
+
 # Create backup directory if it doesn't exist
-mkdir -p "$BACKUP_DIR"
+if ! mkdir -p "$BACKUP_DIR"; then
+    echo "Error: Failed to create backup directory $BACKUP_DIR"
+    exit 1
+fi
+
+# Set secure permissions (owner read/write/execute only)
+chmod 700 "$BACKUP_DIR"
 
 # Backup all databases
 {% for db in databases %}
 echo "Backing up database: {{ db.name }}"
-pg_dump -h localhost -U {{ db.owner }} -f "$BACKUP_DIR/{{ db.name }}_$TIMESTAMP.sql" {{ db.name }}
-if [ $? -eq 0 ]; then
+
+# Set PGPASSWORD or use .pgpass file for authentication
+export PGPASSWORD="{{ db.password | default('') }}"
+
+BACKUP_FILE="$BACKUP_DIR/{{ db.name }}_$TIMESTAMP.sql"
+if pg_dump -h localhost -U {{ db.owner }} -f "$BACKUP_FILE" {{ db.name }}; then
     echo "✅ {{ db.name }} backup completed"
-    gzip "$BACKUP_DIR/{{ db.name }}_$TIMESTAMP.sql"
+    gzip "$BACKUP_FILE"
+    # Set secure permissions on compressed backup
+    chmod 600 "$BACKUP_FILE.gz"
 else
     echo "❌ {{ db.name }} backup failed"
+    # Remove failed backup file if it exists
+    [[ -f "$BACKUP_FILE" ]] && rm "$BACKUP_FILE"
+    exit 1
 fi
+
+# Clear password from environment
+unset PGPASSWORD
 {% endfor %}
 
 # Cleanup old backups
 echo "Cleaning up backups older than $RETENTION_DAYS days"
-find "$BACKUP_DIR" -name "*.sql.gz" -mtime +$RETENTION_DAYS -delete
+
+# Safety check: ensure we're not deleting everything
+if [[ "$RETENTION_DAYS" -gt 0 ]] && [[ -d "$BACKUP_DIR" ]]; then
+    # List files to be deleted for transparency
+    FILES_TO_DELETE=$(find "$BACKUP_DIR" -name "*.sql.gz" -mtime +$RETENTION_DAYS)
+    if [[ -n "$FILES_TO_DELETE" ]]; then
+        echo "Deleting old backup files:"
+        echo "$FILES_TO_DELETE"
+        find "$BACKUP_DIR" -name "*.sql.gz" -mtime +$RETENTION_DAYS -delete
+    else
+        echo "No old backup files found to delete"
+    fi
+else
+    echo "Warning: Skipping cleanup due to invalid retention days or missing backup directory"
+fi
 
 # Log backup completion
 echo "$(date): PostgreSQL backup completed" >> /var/log/postgresql_backup.log

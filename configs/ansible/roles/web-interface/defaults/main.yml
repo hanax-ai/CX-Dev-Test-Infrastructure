@@ -20,7 +20,7 @@ webui_config:
   default_user_role: "user"
   enable_signup: false
   enable_login_form: true
-  default_models: {{ llm_endpoints.chat.models | to_json }}
+  default_models: "{{ llm_endpoints.chat.models | to_json }}"
 
 # API Gateway Integration
 api_gateway:

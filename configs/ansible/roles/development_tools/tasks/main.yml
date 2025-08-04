@@ -15,6 +15,7 @@
   pip:
     requirements: /opt/citadel/requirements-dev.txt
     virtualenv: /opt/citadel/env
+    virtualenv_python: python3  # Explicit Python 3 interpreter
   become_user: agent0
 
 - name: Install additional development packages
@@ -27,6 +28,7 @@
       - sqlite3
       - postgresql-client
       - redis-tools
+      - python3-venv  # Required for virtualenv creation
     state: present
   become: yes
 
@@ -61,9 +63,25 @@
     mode: '0755'
   become: yes
 
-- name: Install VS Code Server (code-server)
-  shell: |
-    curl -fsSL https://code-server.dev/install.sh | sh
+- name: Download code-server installer (secure approach)
+  get_url:
+    url: https://code-server.dev/install.sh
+    dest: /tmp/code-server-install.sh
+    mode: '0755'
+    # TODO: Add checksum validation for production deployment
+    # checksum: "sha256:ACTUAL_CHECKSUM_HERE"
+  become: yes
+
+- name: Install VS Code Server (code-server) with downloaded script
+  shell: /tmp/code-server-install.sh
+  become: yes
+  args:
+    creates: /usr/bin/code-server
+
+- name: Remove installer script after use
+  file:
+    path: /tmp/code-server-install.sh
+    state: absent
   become: yes
 
 - name: Create code-server configuration directory
@@ -80,7 +98,7 @@
     content: |
       bind-addr: 0.0.0.0:8080
       auth: password
-      password: citadel-dev-2025
+      password: "{{ code_server_password }}"
       cert: false
     dest: /home/agent0/.config/code-server/config.yaml
     owner: agent0

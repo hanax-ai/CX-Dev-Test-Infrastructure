@@ -3,13 +3,11 @@
   hosts: services_servers
   become: true
   vars:
-    postgres_version: "17.5"
-    redis_version: "8.0.3"
-    qdrant_version: "latest"
+    qdrant_version: "v1.7.4"
+    qdrant_sha256: "e8b8c8b5d5f5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5"  # Example checksum - replace with actual
     fastapi_deps: "fastapi uvicorn pydantic"
     nginx_conf_dir: "/etc/nginx/sites-available"
-    openwebui_version: "latest"
-    pgpool_version: "latest"
+    openwebui_version: "main"
     flyway_version: "10.14.0"
     ollama_endpoints:
       chat: "http://192.168.10.29:11434"
@@ -32,6 +30,7 @@
           - software-properties-common
           - python3-pip
           - python3-venv
+          - ufw
         state: present
 
     - name: Deploy Qdrant Vector DB (on .30)
@@ -47,8 +46,9 @@
 
         - name: Download Qdrant binary
           get_url:
-            url: "https://github.com/qdrant/qdrant/releases/latest/download/qdrant-x86_64-unknown-linux-gnu.tar.gz"
+            url: "https://github.com/qdrant/qdrant/releases/download/{{ qdrant_version }}/qdrant-x86_64-unknown-linux-gnu.tar.gz"
             dest: /tmp/qdrant.tar.gz
+            checksum: "sha256:{{ qdrant_sha256 }}"
 
         - name: Create Qdrant directories
           file:
@@ -113,8 +113,11 @@
         - name: Configure firewall for Qdrant
           ufw:
             rule: allow
-            port: "6333"
+            port: "{{ item }}"
             from_ip: 192.168.10.0/24
+          loop:
+            - "6333"
+            - "6334"
 
         - name: Test Qdrant
           uri:
@@ -149,11 +152,6 @@
             name: redis-server
             state: present
 
-        - name: Install Pgpool-II
-          apt:
-            name: pgpool2
-            state: present
-
         - name: Download Flyway
           get_url:
             url: "https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/{{ flyway_version }}/flyway-commandline-{{ flyway_version }}-linux-x64.tar.gz"
@@ -173,7 +171,6 @@
           loop:
             - postgresql
             - redis-server
-            - pgpool
 
         - name: Configure firewall
           ufw:
@@ -183,7 +180,6 @@
           loop:
             - "5432"  # PostgreSQL
             - "6379"  # Redis
-            - "5433"  # Pgpool
 
     - name: Deploy OpenWebUI (on .38)
       when: inventory_hostname == 'cx-web'
@@ -202,7 +198,7 @@
         - name: Pull and run OpenWebUI
           docker_container:
             name: open-webui
-            image: ghcr.io/open-webui/open-webui:main
+            image: "ghcr.io/open-webui/open-webui:{{ openwebui_version }}"
             state: started
             restart_policy: always
             ports:
@@ -211,7 +207,6 @@
               - open-webui:/app/backend/data
             env:
               WEBUI_AUTH: "0"
-            network_mode: host
 
         - name: Configure firewall
           ufw:
@@ -222,6 +217,13 @@
     - name: Deploy FastAPI & Nginx (on .39)
       when: inventory_hostname == 'cx-api-gateway'
       block:
+        - name: Create agent0 user
+          user:
+            name: agent0
+            shell: /bin/bash
+            create_home: yes
+            state: present
+
         - name: Create gateway directories
           file:
             path: "{{ item }}"
@@ -274,6 +276,13 @@
             dest: "{{ nginx_conf_dir }}/default"
           notify: restart_nginx
 
+        - name: Enable Nginx site
+          file:
+            src: "{{ nginx_conf_dir }}/default"
+            dest: /etc/nginx/sites-enabled/default
+            state: link
+          notify: restart_nginx
+
         - name: Ensure gateway service is started and enabled
           systemd:
             name: gateway
@@ -283,8 +292,12 @@
         - name: Configure firewall
           ufw:
             rule: allow
-            port: "8000"
+            port: "{{ item }}"
             from_ip: 192.168.10.0/24
+          loop:
+            - "80"    # Nginx HTTP
+            - "443"   # Nginx HTTPS
+            - "8000"  # FastAPI (for direct access if needed)
 
   handlers:
     - name: restart_nginx

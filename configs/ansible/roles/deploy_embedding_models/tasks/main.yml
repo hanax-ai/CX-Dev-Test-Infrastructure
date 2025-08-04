@@ -1,10 +1,167 @@
 #SPDX-License-Identifier: MIT-0
 ---
 # tasks file for roles/deploy_embedding_models
-- name: Ensure embedding models are pulled to the orchestration server
-  command: "ollama pull {{ item }}"
-  loop:
-    - mxbai-embed-large
-    - nomic-embed-text
-    - all-minilm
-  become_user: agent0
+
+- name: Abort deployment if not running on orchestration server
+  fail:
+    msg: "This role should only run on the orchestration server (hx-orchestration-server)"
+  when: inventory_hostname != 'hx-orchestration-server'
+
+- name: Create deployment log file
+  ansible.builtin.file:
+    path: "{{ deployment_log_file }}"
+    state: touch
+    mode: '0644'
+    owner: root
+    group: root
+
+- name: Log deployment start
+  ansible.builtin.lineinfile:
+    path: "{{ deployment_log_file }}"
+    line: "=== CX Embedding Model Deployment Started: {{ ansible_date_time.iso8601 }} ==="
+    create: yes
+
+- name: Check if Ollama is installed
+  ansible.builtin.command:
+    cmd: which ollama
+  register: ollama_check
+  failed_when: false
+  changed_when: false
+
+- name: Fail if Ollama is not installed
+  fail:
+    msg: "Ollama must be installed before deploying embedding models. Please run the LLM server deployment first."
+  when: ollama_check.rc != 0
+
+- name: Start and enable Ollama service
+  ansible.builtin.systemd:
+    name: ollama
+    state: started
+    enabled: yes
+  register: ollama_service
+
+- name: Wait for Ollama service to be ready
+  ansible.builtin.uri:
+    url: "http://localhost:{{ ollama_port }}/api/version"
+    method: GET
+  register: ollama_ready
+  retries: 10
+  delay: 5
+  until: ollama_ready.status == 200
+
+- name: Check available disk space
+  ansible.builtin.command:
+    cmd: "df -h {{ model_storage_path | dirname }}"
+  register: disk_space
+  changed_when: false
+
+- name: Log disk space availability
+  ansible.builtin.lineinfile:
+    path: "{{ deployment_log_file }}"
+    line: "Available disk space: {{ disk_space.stdout_lines[1] }}"
+
+- name: Verify CUDA availability
+  ansible.builtin.command:
+    cmd: nvidia-smi
+  register: cuda_check
+  failed_when: cuda_check.rc != 0
+  changed_when: false
+
+- name: Log CUDA status
+  ansible.builtin.lineinfile:
+    path: "{{ deployment_log_file }}"
+    line: "CUDA Status: Available - {{ cuda_check.stdout_lines[0] }}"
+
+- name: Check currently installed models
+  ansible.builtin.command:
+    cmd: ollama list
+  become_user: "{{ ollama_user }}"
+  register: current_models
+  changed_when: false
+
+- name: Log current models before deployment
+  ansible.builtin.lineinfile:
+    path: "{{ deployment_log_file }}"
+    line: "Current models before deployment: {{ current_models.stdout }}"
+
+- name: Pull embedding models
+  ansible.builtin.command:
+    cmd: "ollama pull {{ item.name }}"
+  loop: "{{ embedding_models }}"
+  become_user: "{{ ollama_user }}"
+  register: model_pulls
+  retries: "{{ retry_attempts }}"
+  delay: "{{ retry_delay }}"
+  until: model_pulls.rc == 0
+
+- name: Verify model installations
+  ansible.builtin.command:
+    cmd: ollama list
+  become_user: "{{ ollama_user }}"
+  register: installed_models
+  changed_when: false
+
+- name: Test embedding functionality for each model
+  ansible.builtin.uri:
+    url: "http://localhost:{{ ollama_port }}/api/embeddings"
+    method: POST
+    body_format: json
+    body:
+      model: "{{ item.name }}"
+      prompt: "test embedding functionality"
+    status_code: 200
+  loop: "{{ embedding_models }}"
+  register: embedding_tests
+  when: test_endpoints | bool
+
+- name: Test remote accessibility
+  ansible.builtin.uri:
+    url: "http://{{ ansible_host }}:{{ ollama_port }}/api/embeddings"
+    method: POST
+    body_format: json
+    body:
+      model: "{{ embedding_models[0].name }}"
+      prompt: "remote connectivity test"
+    status_code: 200
+  delegate_to: localhost
+  register: remote_test
+  when: test_endpoints | bool
+
+- name: Log deployment results using blockinfile
+  ansible.builtin.blockinfile:
+    path: "{{ deployment_log_file }}"
+    marker: "<!-- {mark} DEPLOYMENT RESULTS -->"
+    block: |
+      === Deployment Results ===
+      {% for result in model_pulls.results %}
+      {{ embedding_models[loop.index0].name }}: {{ 'SUCCESS' if result.rc == 0 else 'FAILED' }}
+      {% endfor %}
+      {% if test_endpoints %}
+      Local API Tests:
+      {% for test in embedding_tests.results %}
+      {{ embedding_models[loop.index0].name }}: {{ 'SUCCESS' if test.status == 200 else 'FAILED' }}
+      {% endfor %}
+      Remote API Test: {{ 'SUCCESS' if remote_test.status == 200 else 'FAILED' }}
+      {% endif %}
+      Final model list: {{ installed_models.stdout }}
+      === Deployment Completed: {{ ansible_date_time.iso8601 }} ===
+
+- name: Display deployment summary
+  ansible.builtin.debug:
+    msg: |
+      ========================================
+      CX Embedding Models Deployment Summary
+      ========================================
+      Server: {{ inventory_hostname }} ({{ ansible_host }})
+      Models Installed:
+      {% for model in embedding_models %}
+      - {{ model.name }} ({{ model.size }}): {{ 'SUCCESS' if model_pulls.results[loop.index0].rc == 0 else 'FAILED' }}
+      {% endfor %}
+      
+      API Endpoints:
+      - Local: http://localhost:{{ ollama_port }}/api/embeddings
+      - Network: http://{{ ansible_host }}:{{ ollama_port }}/api/embeddings
+      
+      Storage Location: {{ model_storage_path }}
+      Log File: {{ deployment_log_file }}
+      ========================================

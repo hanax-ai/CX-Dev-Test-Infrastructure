@@ -19,6 +19,11 @@
         size: "23M"
 
   tasks:
+    - name: 0. Verify this is the orchestration server
+      fail:
+        msg: "This playbook should only run on the orchestration server (hx-orc-server)"
+      when: inventory_hostname != 'hx-orc-server'
+
     - name: 1. Verify CUDA environment is properly configured
       shell: bash -c "source /etc/profile.d/cuda.sh && nvcc --version"
       register: cuda_verification
@@ -31,17 +36,27 @@
           - "CUDA Environment Verified:"
           - "{{ cuda_verification.stdout_lines }}"
 
-    - name: 3. Install Ollama service
-      shell: curl -fsSL https://ollama.com/install.sh | sh
-      register: ollama_install
-      changed_when: "'Ollama is now installed' in ollama_install.stdout or ollama_install.rc == 0"
+    - name: 3. Download Ollama installer script
+      get_url:
+        url: https://ollama.com/install.sh
+        dest: /tmp/ollama-install.sh
+        mode: '0755'
+        timeout: 30
+      register: ollama_script
 
-    - name: 4. Check if Ollama service file exists
+    - name: 4. Install Ollama from verified script
+      command: /tmp/ollama-install.sh
+      args:
+        creates: /usr/local/bin/ollama
+      register: ollama_install
+      when: ollama_script is succeeded
+
+    - name: 5. Check if Ollama service file exists
       stat:
         path: "{{ ollama_service_file }}"
       register: ollama_service_exists
 
-    - name: 5. Configure Ollama service for GPU and remote access
+    - name: 6. Configure Ollama service for GPU and remote access
       blockinfile:
         path: "{{ ollama_service_file }}"
         block: |
@@ -56,7 +71,7 @@
       when: ollama_service_exists.stat.exists
       notify: restart_ollama
 
-    - name: 6. Create AI models directory
+    - name: 7. Create AI models directory
       file:
         path: "{{ model_dir }}"
         state: directory
@@ -64,7 +79,7 @@
         group: agent0
         mode: '0755'
 
-    - name: 6.1. Ensure /opt/ai_models has correct permissions for Ollama
+    - name: 7.1. Ensure /opt/ai_models has correct permissions for Ollama
       file:
         path: /opt/ai_models
         state: directory
@@ -73,21 +88,21 @@
         recurse: yes
       when: "'ai_processing_tier' in group_names"
 
-    - name: 7. Start and enable Ollama service
+    - name: 8. Start and enable Ollama service
       systemd:
         name: ollama
         state: restarted
         enabled: yes
         daemon_reload: yes
 
-    - name: 8. Wait for Ollama service to be ready
+    - name: 9. Wait for Ollama service to be ready
       wait_for:
         port: 11434
         host: 127.0.0.1
         delay: 10
         timeout: 60
 
-    - name: 9. Test Ollama service accessibility
+    - name: 10. Test Ollama service accessibility
       uri:
         url: "http://{{ ansible_default_ipv4.address }}:11434/api/tags"
         method: GET
@@ -96,14 +111,14 @@
       retries: 3
       delay: 5
 
-    - name: 10. Display Ollama service status
+    - name: 11. Display Ollama service status
       debug:
         msg:
           - "Ollama Service Status: {{ 'RUNNING' if ollama_api_test.status == 200 else 'FAILED' }}"
           - "API Endpoint: http://{{ ansible_default_ipv4.address }}:11434"
           - "Response Code: {{ ollama_api_test.status | default('N/A') }}"
 
-    - name: 11. Pull embedding models
+    - name: 12. Pull embedding models
       shell: "ollama pull {{ item.name }}:{{ item.tag }}"
       loop: "{{ embedding_models }}"
       register: model_pulls
@@ -113,18 +128,18 @@
       retries: 2
       delay: 10
 
-    - name: 12. Verify models are installed
+    - name: 13. Verify models are installed
       shell: "ollama list"
       register: installed_models
       changed_when: false
 
-    - name: 13. Display installed models
+    - name: 14. Display installed models
       debug:
         msg:
           - "Successfully Installed Embedding Models:"
           - "{{ installed_models.stdout_lines }}"
 
-    - name: 14. Test embedding model functionality
+    - name: 15. Test embedding model functionality
       shell: |
         echo '{"model": "mxbai-embed-large:335m", "prompt": "Hello world"}' | \
         curl -s -X POST http://localhost:11434/api/embeddings -d @-
@@ -132,7 +147,7 @@
       changed_when: false
       failed_when: false
 
-    - name: 15. Configure firewall for Ollama
+    - name: 16. Configure firewall for Ollama
       ufw:
         rule: allow
         port: 11434
@@ -140,7 +155,16 @@
         comment: "Ollama API - Internal network only"
       notify: reload_ufw
 
-    - name: 16. Generate deployment summary
+    - name: 17. Build model summary lines
+      set_fact:
+        model_summary: []
+
+    - name: 17.1. Build model display list
+      set_fact:
+        model_summary: "{{ model_summary + ['  ✅ ' + item.name + ':' + item.tag + ' (' + item.size + ')'] }}"
+      loop: "{{ embedding_models }}"
+
+    - name: 18. Generate deployment summary
       set_fact:
         orchestration_deployment:
           server: "{{ inventory_hostname }}"
@@ -153,7 +177,7 @@
           deployment_time: "{{ ansible_date_time.iso8601 }}"
           cuda_configured: "{{ cuda_verification.rc == 0 }}"
 
-    - name: 17. Display final deployment status
+    - name: 19. Display final deployment status
       debug:
         msg:
           - "============================================================="
@@ -166,9 +190,7 @@
           - "  GPU Acceleration: {{ 'ENABLED' if cuda_verification.rc == 0 else 'DISABLED' }}"
           - ""
           - "🤖 EMBEDDING MODELS DEPLOYED:"
-          - "{% for model in embedding_models %}"
-          - "  ✅ {{ model.name }}:{{ model.tag }} ({{ model.size }})"
-          - "{% endfor %}"
+          - "{{ model_summary }}"
           - ""
           - "🔧 CONFIGURATION:"
           - "  Model Directory: {{ model_dir }}"
@@ -179,12 +201,17 @@
           - "🎯 DEPLOYMENT STATUS: {{ 'SUCCESS' if ollama_api_test.status == 200 else 'NEEDS ATTENTION' }}"
           - "============================================================="
 
-    - name: 18. Save deployment report
+    - name: 20. Save deployment report
       copy:
         content: "{{ orchestration_deployment | to_nice_json }}"
         dest: "/tmp/orchestration_deployment_{{ ansible_date_time.epoch }}.json"
       delegate_to: localhost
       become: false
+
+    - name: 21. Clean up temporary files
+      file:
+        path: /tmp/ollama-install.sh
+        state: absent
 
   handlers:
     - name: restart_ollama

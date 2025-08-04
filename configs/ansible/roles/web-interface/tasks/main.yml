@@ -64,7 +64,7 @@
     - name: Clone Open WebUI repository
       git:
         repo: "https://github.com/open-webui/open-webui.git"
-        dest: "{{ app_directory }}/open-webui"
+        dest: "{{ app_directory }}"
         version: "main"
         force: yes
       become_user: www-data
@@ -165,13 +165,13 @@
         chdir: "{{ app_directory }}"
       become_user: www-data
 
-    - name: Save PM2 configuration
-      command: pm2 save
-      become_user: www-data
-
     - name: Setup PM2 startup script
       command: pm2 startup systemd -u www-data --hp /var/www
       become: yes
+
+    - name: Save PM2 configuration
+      command: pm2 save
+      become_user: www-data
 
 - name: Configure Nginx reverse proxy
   block:
