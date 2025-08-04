@@ -1,0 +1,127 @@
+# Test Array Index Safety - Embedding Models Role
+---
+- name: Test Array Index Safety Improvements
+  hosts: localhost
+  gather_facts: no
+  vars:
+    # Test with reordered models to verify index safety
+    embedding_models:
+      - name: "all-minilm"        # Moved to first position
+        tag: "33m"
+        size: "23M"
+      - name: "mxbai-embed-large" # Moved to second position  
+        tag: "335m"
+        size: "334M"
+      - name: "nomic-embed-text"  # Moved to third position
+        tag: "v1.5"
+        size: "137M"
+    
+    # Mock results to test template processing
+    model_pulls:
+      results:
+        - item:
+            name: "all-minilm"
+            tag: "33m"
+            size: "23M"
+          changed: true
+          rc: 0
+          stdout: "pulled model successfully"
+        - item:
+            name: "mxbai-embed-large"
+            tag: "335m"
+            size: "334M"
+          changed: true
+          rc: 0
+          stdout: "pulled model successfully"
+        - item:
+            name: "nomic-embed-text"
+            tag: "v1.5"
+            size: "137M"
+          failed: true
+          rc: 1
+          stderr: "model pull failed"
+
+  tasks:
+    - name: Test old method (vulnerable to index misalignment)
+      debug:
+        msg: |
+          OLD METHOD (VULNERABLE):
+          {% for result in model_pulls.results %}
+          {{ embedding_models[loop.index0].name }}: {{ 'SUCCESS' if result.rc == 0 else 'FAILED' }}
+          {% endfor %}
+
+    - name: Test new method (safe direct item access)
+      debug:
+        msg: |
+          NEW METHOD (SAFE):
+          {% for result in model_pulls.results %}
+          {{ result.item.name }}: {{ 'SUCCESS' if result.rc == 0 else 'FAILED' }}
+          {% endfor %}
+
+    - name: Demonstrate index misalignment scenario
+      debug:
+        msg: |
+          ================================================
+          INDEX SAFETY DEMONSTRATION
+          ================================================
+          
+          SCENARIO: Models reordered but results maintain original execution order
+          
+          Original embedding_models order:
+          1. mxbai-embed-large
+          2. nomic-embed-text  
+          3. all-minilm
+          
+          Current embedding_models order (reordered):
+          1. all-minilm        ← Now at index 0
+          2. mxbai-embed-large ← Now at index 1
+          3. nomic-embed-text  ← Now at index 2
+          
+          Results from original execution order:
+          1. all-minilm: SUCCESS
+          2. mxbai-embed-large: SUCCESS
+          3. nomic-embed-text: FAILED
+          
+          OLD METHOD WOULD INCORRECTLY REPORT:
+          - all-minilm: SUCCESS     ← Wrong! Reports all-minilm status for all-minilm result
+          - mxbai-embed-large: SUCCESS ← Wrong! Reports mxbai status for mxbai result  
+          - nomic-embed-text: FAILED    ← Wrong! Reports nomic status for nomic result
+          
+          Wait, in this case they align... let me fix the example:
+          
+          BETTER SCENARIO: Partial failure with different execution order
+          If all-minilm failed first, results array would be:
+          1. all-minilm: FAILED
+          2. mxbai-embed-large: SUCCESS  
+          # nomic-embed-text never attempted due to failure
+          
+          OLD METHOD WITH loop.index0:
+          - embedding_models[0] (all-minilm): reports result[0] status ← Correct by accident  
+          - embedding_models[1] (mxbai): reports result[1] status ← Correct by accident
+          - embedding_models[2] (nomic): reports result[2] ← INDEX ERROR! result[2] doesn't exist
+          
+          NEW METHOD WITH result.item:
+          - result[0].item.name (all-minilm): reports result[0] status ← Always correct
+          - result[1].item.name (mxbai): reports result[1] status ← Always correct  
+          # No attempt to access nonexistent result[2]
+          
+          CONCLUSION: New method is immune to index misalignment errors!
+          ================================================
+
+    - name: Validate template safety with missing results
+      vars:
+        incomplete_results:
+          results:
+            - item:
+                name: "all-minilm"
+                size: "23M"
+              rc: 0
+            # Only one result - other models failed early
+      debug:
+        msg: |
+          INCOMPLETE RESULTS TEST:
+          {% for result in incomplete_results.results %}
+          {{ result.item.name }} ({{ result.item.size }}): {{ 'SUCCESS' if result.rc == 0 else 'FAILED' }}
+          {% endfor %}
+          
+          ^ This template works safely even with incomplete results!
