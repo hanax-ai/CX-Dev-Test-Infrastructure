@@ -4,8 +4,8 @@
 
 - name: Abort deployment if not running on orchestration server
   fail:
-    msg: "This role should only run on the orchestration server ({{ embedding_host | default('hx-orc-server') }})"
-  when: inventory_hostname != (embedding_host | default('hx-orc-server'))
+    msg: "This role should only run on the orchestration server ({{ embedding_host | default('cx-orchestration') }})"
+  when: inventory_hostname != (embedding_host | default('cx-orchestration'))
 
 - name: Create deployment log file
   ansible.builtin.file:
@@ -58,7 +58,7 @@
 - name: Log disk space availability
   ansible.builtin.lineinfile:
     path: "{{ deployment_log_file }}"
-    line: "Available disk space: {{ disk_space.stdout_lines[1] }}"
+    line: "Available disk space: {{ (disk_space.stdout_lines | last) | default('unknown') }}"
 
 - name: Verify CUDA availability
   ansible.builtin.command:
@@ -135,12 +135,12 @@
     block: |
       === Deployment Results ===
       {% for result in model_pulls.results %}
-      {{ embedding_models[loop.index0].name }}: {{ 'SUCCESS' if result is succeeded else 'FAILED' }}
+      {{ result.item.name }}: {{ 'SUCCESS' if result is succeeded else 'FAILED' }}
       {% endfor %}
       {% if test_endpoints %}
       Local API Tests:
       {% for test in embedding_tests.results %}
-      {{ embedding_models[loop.index0].name }}: {{ 'SUCCESS' if test.status == 200 else 'FAILED' }}
+      {{ test.item.name }}: {{ 'SUCCESS' if test.status == 200 else 'FAILED' }}
       {% endfor %}
       Remote API Test: {{ 'SUCCESS' if remote_test.status == 200 else 'FAILED' }}
       {% endif %}
@@ -155,8 +155,8 @@
       ========================================
       Server: {{ inventory_hostname }} ({{ ansible_host }})
       Models Installed:
-      {% for model in embedding_models %}
-      - {{ model.name }} ({{ model.size }}): {{ 'SUCCESS' if model_pulls.results[loop.index0] is succeeded else 'FAILED' }}
+      {% for result in model_pulls.results %}
+      - {{ result.item.name }} ({{ result.item.size }}): {{ 'SUCCESS' if result is succeeded else 'FAILED' }}
       {% endfor %}
       
       API Endpoints:
