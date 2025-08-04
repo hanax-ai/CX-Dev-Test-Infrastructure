@@ -58,7 +58,7 @@
 - name: Log disk space availability
   ansible.builtin.lineinfile:
     path: "{{ deployment_log_file }}"
-    line: "Available disk space: {{ (disk_space.stdout_lines | last) | default('unknown') }}"
+    line: "Available disk space: {{ (disk_space.stdout_lines | default([]) | last | default('unknown')) }}"
 
 - name: Verify CUDA availability
   ansible.builtin.command:
@@ -121,7 +121,7 @@
     method: POST
     body_format: json
     body:
-      model: "{{ embedding_models[0].name }}"
+      model: "{{ (embedding_models | first).name }}"
       prompt: "remote connectivity test"
     status_code: 200
   delegate_to: localhost
