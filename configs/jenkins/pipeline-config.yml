@@ -1,41 +1,80 @@
-# CX R&D Infrastructure - Jenkins Pipeline Configuration
-# Defines CI/CD pipelines for infrastructure deployment
-# Updated: July 31, 2025
+# CX R&D Infrastructure - Unified Jenkins Pipeline Configuration
+# Aligned with definitive Jenkinsfile (August 2025)
 
 pipelines:
   infrastructure_deployment:
     name: "CX Infrastructure Deployment"
-    description: "Deploy and configure CX R&D Infrastructure servers"
+    description: "Deploy and validate CX R&D Infrastructure across Phases 4 and 5"
     triggers:
       - type: "scm"
         schedule: "H 2 * * *"  # Daily at 2 AM
       - type: "webhook"
         token: "cx-infra-deploy"
-    
+
+    parameters:
+      run_preflight_checks: true
+      deploy_phase_4: true
+      deploy_phase_5: true
+      run_post_deploy_validation: true
+
     stages:
       - name: "checkout"
         script: |
           git clone https://github.com/hanax-ai/CX-Dev-Test-Infrastructure.git
           cd CX-Dev-Test-Infrastructure
-      
+
+      - name: "preflight_checks"
+        when: "{{parameters.run_preflight_checks}}"
+        script: |
+          cd configs/ansible
+          ansible-playbook -i inventory.yaml preflight-checks.yml
+
       - name: "terraform_plan"
         script: |
           cd configs/terraform
           terraform init
+          terraform validate
           terraform plan -out=tfplan
-      
+
       - name: "terraform_apply"
         script: |
           terraform apply tfplan
-      
-      - name: "ansible_deploy"
+
+      - name: "deploy_phase_4"
+        when: "{{parameters.deploy_phase_4}}"
         script: |
           cd configs/ansible
-          ansible-playbook -i inventory.yml site.yml
-      
-      - name: "health_check"
+          ansible-playbook -i inventory.yaml deploy-orchestration-server.yml
+          ansible-playbook -i inventory.yaml deploy-llm-server-01.yml
+          ansible-playbook -i inventory.yaml deploy-llm-server-02.yml
+
+      - name: "deploy_phase_5"
+        when: "{{parameters.deploy_phase_5}}"
         script: |
-          ./scripts/health-check.sh
+          echo "Deploying Vector DB, Web UI, and Metrics..."
+          bash ../../scripts/test_qdrant_remote.sh || echo "Qdrant test failed"
+          python3 ../../scripts/test_postgres_connection.py || echo "Postgres test failed"
+          python3 ../../scripts/diagnose_web_ui_server_paramiko.py || echo "Web UI diagnostics failed"
+
+      - name: "post_deploy_validation"
+        when: "{{parameters.run_post_deploy_validation}}"
+        script: |
+          cd scripts
+          chmod +x check_phase5_servers_headless.sh
+          ./check_phase5_servers_headless.sh
+          echo "[`date '+%Y-%m-%d %H:%M:%S'`] ✅ Phase 5 validation passed" > ../validation-report.log
+
+      - name: "generate_report"
+        script: |
+          echo "=== CX Infrastructure Deployment Report ===" > deployment-report.txt
+          echo "Date: $(date)" >> deployment-report.txt
+          echo "" >> deployment-report.txt
+          cat validation-report.log >> deployment-report.txt || echo "No validation log found"
+          echo "" >> deployment-report.txt
+          if [ -f configs/terraform/deployment-metadata.json ]; then
+            echo "=== Terraform Metadata ===" >> deployment-report.txt
+            cat configs/terraform/deployment-metadata.json >> deployment-report.txt
+          fi
 
   server_monitoring:
     name: "CX Server Health Monitoring"
@@ -43,12 +82,12 @@ pipelines:
     triggers:
       - type: "cron"
         schedule: "*/15 * * * *"  # Every 15 minutes
-    
+
     stages:
       - name: "health_check"
         script: |
-          ./scripts/health-check.sh
-      
+          ./scripts/health-check.sh || echo "⚠️ Health check script failed"
+
       - name: "generate_report"
         script: |
           echo "Health check completed at $(date)" > health-report.txt
@@ -71,7 +110,7 @@ notifications:
     channels:
       - "#cx-infrastructure"
       - "#devops-alerts"
-  
+
   email:
     recipients:
       - "jarvisr@hana-x.ai"

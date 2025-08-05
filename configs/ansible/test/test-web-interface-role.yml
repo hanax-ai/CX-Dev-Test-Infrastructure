@@ -1,0 +1,6 @@
+---
+- name: Test Web Interface Role
+  hosts: localhost
+  become: yes
+  roles:
+    - web-interface

@@ -1,0 +1,41 @@
+---
+# API Gateway Servers Configuration
+# Group: api_gateway_servers
+# Servers: hx-api-gateway-server
+
+# FastAPI Configuration
+fastapi_port: 8000
+fastapi_workers: 4
+fastapi_max_requests: 1000
+fastapi_timeout: 30
+
+# Nginx Configuration
+nginx_port: 80
+nginx_ssl_port: 443
+nginx_worker_processes: "auto"
+nginx_worker_connections: 1024
+
+# Load Balancer Configuration
+load_balancer_algorithm: "round_robin"
+upstream_servers:
+  - "127.0.0.1:8000"
+
+# Service Management
+api_gateway_services:
+  - fastapi
+  - nginx
+  - load_balancer
+  - monitoring
+
+# SSL/TLS Configuration
+ssl_enabled: true
+ssl_cert_path: "/etc/ssl/certs/citadel-ai.crt"
+ssl_key_path: "/etc/ssl/private/citadel-ai.key"
+
+# Rate Limiting
+rate_limit_enabled: true
+rate_limit_requests_per_minute: 100
+
+# Monitoring
+monitoring_enabled: true
+api_metrics_enabled: true

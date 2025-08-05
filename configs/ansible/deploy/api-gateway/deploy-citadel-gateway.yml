@@ -1,0 +1,33 @@
+---
+- name: Deploy Citadel AI Gateway
+  hosts: api_gateway_servers
+  become: yes
+  vars:
+    gateway_user: citadel-gateway
+    gateway_home: /opt/citadel-gateway
+    gateway_config_dir: /etc/citadel-gateway
+    gateway_port: 8000
+    log_dir: /var/log/citadel-gateway
+    cors_origins: "*"
+    model_map_verbose: false
+    log_level: INFO
+
+    ollama_nodes:
+      - name: hx-llm-server-01
+        host: 192.168.10.28
+        port: 11434
+      - name: hx-llm-server-02
+        host: 192.168.10.29
+        port: 11434
+
+    model_mappings:
+      "llama3.2:3b": hx-llm-server-01
+      "llama3:8b": hx-llm-server-01
+      "nous-hermes2:latest": hx-llm-server-01
+      "llama4:16x17b": hx-llm-server-02
+      "mistral:7b": hx-llm-server-02
+      "qwen3:8b": hx-llm-server-02
+      default: hx-llm-server-01
+
+  roles:
+    - citadel_gateway

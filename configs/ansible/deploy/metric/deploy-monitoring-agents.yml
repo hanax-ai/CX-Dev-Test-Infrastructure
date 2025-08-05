@@ -1,0 +1,7 @@
+# File: deploy/metric/deploy-monitoring-agents.yml
+---
+- name: Deploy Citadel Node Exporter Agent (Monitoring)
+  hosts: all
+  become: yes
+  roles:
+    - monitoring_node_exporter

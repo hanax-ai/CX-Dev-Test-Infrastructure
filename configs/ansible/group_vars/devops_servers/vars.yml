@@ -1,0 +1,28 @@
+---
+# DevOps Servers Configuration
+# Group: devops_servers
+# Servers: hx-dev-ops-server
+
+# CI/CD Configuration
+jenkins_enabled: true
+jenkins_port: 8080
+jenkins_home: "/var/lib/jenkins"
+
+ansible_enabled: true
+ansible_config_path: "/etc/ansible"
+
+terraform_enabled: true
+terraform_version: "1.5.0"
+
+# Service Management
+devops_services:
+  - ci_cd
+  - monitoring
+
+# Security Configuration
+ssh_key_management: true
+vault_integration: true
+
+# Monitoring
+monitoring_enabled: true
+ci_cd_metrics_enabled: true

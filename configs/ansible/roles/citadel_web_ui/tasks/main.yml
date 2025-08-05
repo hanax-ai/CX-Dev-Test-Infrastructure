@@ -1,0 +1,314 @@
+---
+- name: Install Node.js and system dependencies
+  block:
+    - name: Install Node.js via snap (Ubuntu 24.04 compatible)
+      snap:
+        name: node
+        channel: "20/stable"
+        classic: yes
+        state: present
+
+    - name: Install system development tools
+      apt:
+        name:
+          - build-essential
+          - python3-dev
+          - python3-pip
+          - git
+          - curl
+          - nginx
+        state: present
+        update_cache: yes
+
+    - name: Install global npm packages
+      npm:
+        name: "{{ item }}"
+        global: yes
+        state: present
+      loop:
+        - pm2
+        - yarn
+
+- name: Create custom Citadel Web UI application
+  block:
+    - name: Ensure parent directory exists
+      file:
+        path: "{{ app_directory | dirname }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+    - name: Create application directory structure
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+      loop:
+        - "{{ app_directory }}"
+        - "{{ app_directory }}/src"
+        - "{{ app_directory }}/src/components"
+        - "{{ app_directory }}/src/routes"
+        - "{{ app_directory }}/src/styles"
+        - "{{ app_directory }}/static"
+        - "{{ app_directory }}/static/assets"
+        - "{{ app_directory }}/logs"
+
+    - name: Initialize Svelte application structure
+      block:
+        - name: Ensure application directory has correct ownership
+          file:
+            path: "{{ app_directory }}"
+            state: directory
+            owner: www-data
+            group: www-data
+            mode: '0755'
+
+        - name: Create logs directory
+          file:
+            path: "{{ app_directory }}/logs"
+            state: directory
+            owner: www-data
+            group: www-data
+            mode: '0755'
+
+        - name: Create assets directory (if not exists from clone)
+          file:
+            path: "{{ app_directory }}/public/assets"
+            state: directory
+            owner: www-data
+            group: www-data
+            mode: '0755'
+
+        - name: Ensure styles directory exists
+          file:
+            path: "{{ app_directory }}/src/styles"
+            state: directory
+            owner: www-data
+            group: www-data
+            mode: '0755'
+
+        - name: Ensure components directory exists
+          file:
+            path: "{{ app_directory }}/src/components"
+            state: directory
+            owner: www-data
+            group: www-data
+            mode: '0755'
+
+- name: Configure Open WebUI application
+  block:
+    - name: Create custom package.json
+      template:
+        src: package.json.j2
+        dest: "{{ app_directory }}/package.json"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+
+    - name: Create environment configuration
+      template:
+        src: .env.j2
+        dest: "{{ app_directory }}/.env"
+        owner: www-data
+        group: www-data
+        mode: '0600'
+
+    - name: Create custom configuration
+      template:
+        src: config.js.j2
+        dest: "{{ app_directory }}/config.js"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+
+    - name: Install npm dependencies
+      npm:
+        path: "{{ app_directory }}"
+        state: present
+      become_user: www-data
+
+- name: Create custom components and pages
+  block:
+    - name: Create custom authentication component
+      template:
+        src: ClerkAuth.svelte.j2
+        dest: "{{ app_directory }}/src/components/ClerkAuth.svelte"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+
+    - name: Create custom chat interface
+      template:
+        src: CitadelChat.svelte.j2
+        dest: "{{ app_directory }}/src/components/CitadelChat.svelte"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+
+    - name: Create RAG interface component
+      template:
+        src: RAGInterface.svelte.j2
+        dest: "{{ app_directory }}/src/components/RAGInterface.svelte"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+
+    - name: Create custom CSS
+      template:
+        src: citadel-theme.css.j2
+        dest: "{{ app_directory }}/src/styles/citadel-theme.css"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+
+- name: Build and configure application
+  block:
+    - name: Build the application
+      command: npm run build
+      args:
+        chdir: "{{ app_directory }}"
+      become_user: www-data
+      environment:
+        NODE_ENV: production
+
+    - name: Create PM2 ecosystem file
+      template:
+        src: ecosystem.config.js.j2
+        dest: "{{ app_directory }}/ecosystem.config.js"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+
+    - name: Start application with PM2
+      command: pm2 start ecosystem.config.js
+      args:
+        chdir: "{{ app_directory }}"
+      become_user: www-data
+
+    - name: Setup PM2 startup script
+      command: pm2 startup systemd -u www-data --hp /var/www
+      become: yes
+
+    - name: Save PM2 configuration
+      command: pm2 save
+      become_user: www-data
+
+- name: Configure Nginx reverse proxy
+  block:
+    - name: Create Nginx configuration
+      template:
+        src: nginx_web_ui.conf.j2
+        dest: /etc/nginx/sites-available/web-ui
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart nginx
+
+    - name: Enable Nginx site
+      file:
+        src: /etc/nginx/sites-available/web-ui
+        dest: /etc/nginx/sites-enabled/web-ui
+        state: link
+      notify: restart nginx
+
+    - name: Remove default Nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: restart nginx
+
+    - name: Start and enable Nginx
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+
+- name: Configure firewall
+  block:
+    - name: Allow HTTP traffic
+      ufw:
+        rule: allow
+        port: 80
+        from_ip: "192.168.10.0/24"
+
+    - name: Allow HTTPS traffic
+      ufw:
+        rule: allow
+        port: 443
+        from_ip: "192.168.10.0/24"
+
+    - name: Allow web UI port
+      ufw:
+        rule: allow
+        port: "{{ app_port }}"
+        from_ip: "192.168.10.0/24"
+
+- name: Setup monitoring and logging
+  block:
+    - name: Create health check script
+      template:
+        src: health_check.sh.j2
+        dest: /usr/local/bin/web_ui_health_check.sh
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create log rotation configuration
+      template:
+        src: logrotate.conf.j2
+        dest: /etc/logrotate.d/web-ui
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Setup PM2 log management
+      command: pm2 install pm2-logrotate
+      become_user: www-data
+      ignore_errors: yes
+
+- name: Final validation
+  block:
+    - name: Verify critical directories exist
+      stat:
+        path: "{{ item }}"
+      register: dir_check
+      failed_when: not dir_check.stat.exists
+      loop:
+        - "{{ app_directory }}/logs"
+        - "{{ app_directory }}/public/assets"
+        - "{{ app_directory }}/src/components"
+        - "{{ app_directory }}/src/styles"
+
+    - name: Wait for application to be ready
+      uri:
+        url: "http://127.0.0.1:{{ app_port }}"
+        method: GET
+        timeout: 30
+      register: app_check
+      until: app_check.status == 200
+      retries: 10
+      delay: 5
+
+    - name: Test API Gateway connectivity
+      uri:
+        url: "http://127.0.0.1:{{ app_port }}/api/health"
+        method: GET
+        timeout: 10
+      register: api_test
+      failed_when: false
+
+    - name: Display Web UI status
+      debug:
+        msg:
+          - "=== WEB INTERFACE DEPLOYMENT COMPLETE ==="
+          - "Server: {{ inventory_hostname }} ({{ ansible_default_ipv4.address }})"
+          - "Web UI: http://{{ ansible_default_ipv4.address }}:{{ app_port }}"
+          - "Application: {{ app_name }} v{{ app_version }}"
+          - "Authentication: Clerk Integration"
+          - "API Gateway: {{ api_gateway.base_url }}"
+          - "Features: {{ features.keys() | list | length }} enabled"
+          - "Node.js Version: {{ nodejs_version }}"
+          - "PM2 Status: Running with {{ ansible_processor_vcpus }} workers"

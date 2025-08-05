@@ -1,0 +1,66 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for roles/node_exporter
+
+- name: Download node_exporter archive
+  get_url:
+    url: "{{ node_exporter_download_url }}"
+    dest: /tmp/node_exporter.tar.gz
+    mode: '0644'
+    checksum: "{{ node_exporter_checksum }}"
+
+- name: Extract node_exporter
+  unarchive:
+    src: /tmp/node_exporter.tar.gz
+    dest: "{{ node_exporter_extract_path }}"
+    remote_src: yes
+    creates: "{{ node_exporter_extract_path }}/node_exporter-{{ node_exporter_version }}.{{ node_exporter_arch }}"
+
+- name: Symlink node_exporter binary
+  file:
+    src: "{{ node_exporter_extract_path }}/node_exporter-{{ node_exporter_version }}.{{ node_exporter_arch }}/node_exporter"
+    dest: "{{ node_exporter_binary_path }}"
+    state: link
+    force: yes
+
+- name: Create node_exporter system group
+  group:
+    name: "{{ node_exporter_group }}"
+    system: yes
+
+- name: Create node_exporter system user
+  user:
+    name: "{{ node_exporter_user }}"
+    group: "{{ node_exporter_group }}"
+    system: yes
+    shell: /usr/sbin/nologin
+    home: /var/lib/node_exporter
+    create_home: no
+
+- name: Create node_exporter systemd service
+  copy:
+    dest: /etc/systemd/system/node_exporter.service
+    content: |
+      [Unit]
+      Description=Prometheus Node Exporter
+      After=network.target
+
+      [Service]
+      User={{ node_exporter_user }}
+      Group={{ node_exporter_group }}
+      ExecStart={{ node_exporter_binary_path }}
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart node_exporter
+
+- name: Reload systemd
+  systemd:
+    daemon_reload: yes
+
+- name: Enable and start node_exporter
+  systemd:
+    name: node_exporter
+    enabled: yes
+    state: started

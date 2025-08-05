@@ -1,0 +1,40 @@
+---
+# Web Servers Configuration
+# Group: web_servers
+# Servers: hx-web-server
+
+# OpenWebUI Configuration
+openwebui_port: 3000
+openwebui_version: "latest"
+openwebui_data_path: "/opt/open-webui/data"
+
+# Node.js Configuration
+nodejs_version: "20"
+nodejs_port: 3000
+nodejs_env: "production"
+
+# Nginx Configuration
+nginx_port: 80
+nginx_ssl_port: 443
+nginx_proxy_port: 3000
+
+# Clerk Authentication
+clerk_auth_enabled: true
+clerk_frontend_api_url: "{{ vault_clerk_frontend_api_url }}"
+clerk_api_key: "{{ vault_clerk_api_key }}"
+
+# Service Management
+web_services:
+  - open_webui
+  - nodejs
+  - nginx
+  - clerk_auth
+
+# SSL/TLS Configuration
+ssl_enabled: true
+ssl_cert_path: "/etc/ssl/certs/citadel-web.crt"
+ssl_key_path: "/etc/ssl/private/citadel-web.key"
+
+# Monitoring
+monitoring_enabled: true
+web_metrics_enabled: true

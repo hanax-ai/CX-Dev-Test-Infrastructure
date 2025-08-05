@@ -1,0 +1,11 @@
+---
+# Default variables for development_tools role
+
+# Code-server configuration
+# NOTE: This should be overridden with vault-encrypted value in group_vars or host_vars
+code_server_password: "CHANGE_ME_USE_VAULT"  # Override with vault-encrypted value
+
+# Development environment settings
+dev_workspace_path: "/opt/citadel/workspace"
+dev_requirements_path: "/opt/citadel/requirements-dev.txt"
+dev_virtualenv_path: "/opt/citadel/env"

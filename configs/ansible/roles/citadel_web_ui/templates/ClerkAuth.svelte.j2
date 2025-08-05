@@ -1,0 +1,109 @@
+<script>
+  import { ClerkProvider, SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/sveltekit';
+  import { writable } from 'svelte/store';
+  
+  // Clerk configuration from Ansible variables
+  export let clerkConfig = {
+    publishableKey: '{{ clerk_config.publishable_key }}',
+    frontendApi: '{{ clerk_config.frontend_api }}'
+  };
+  
+  // User authentication state
+  export const isAuthenticated = writable(false);
+  export const userProfile = writable(null);
+  
+  // Handle authentication state changes
+  function handleUserChange(user) {
+    if (user) {
+      isAuthenticated.set(true);
+      userProfile.set({
+        id: user.id,
+        email: user.emailAddresses[0]?.emailAddress,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        imageUrl: user.imageUrl
+      });
+    } else {
+      isAuthenticated.set(false);
+      userProfile.set(null);
+    }
+  }
+</script>
+
+<ClerkProvider {clerkConfig}>
+  <div class="clerk-auth-container">
+    <SignedIn>
+      <div class="user-profile">
+        <UserButton afterSignOutUrl="/" />
+        <span class="welcome-text">
+          Welcome to {{ webui_config.site_name }}
+        </span>
+      </div>
+    </SignedIn>
+    
+    <SignedOut>
+      <div class="sign-in-prompt">
+        <h2>{{ webui_config.site_description }}</h2>
+        <p>Please sign in to access the platform</p>
+        <SignInButton mode="modal">
+          <button class="sign-in-button">
+            Sign In
+          </button>
+        </SignInButton>
+      </div>
+    </SignedOut>
+  </div>
+</ClerkProvider>
+
+<style>
+  .clerk-auth-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  
+  .user-profile {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  
+  .welcome-text {
+    font-size: 0.9rem;
+    color: var(--primary-text);
+    font-weight: 500;
+  }
+  
+  .sign-in-prompt {
+    text-align: center;
+    max-width: 400px;
+    padding: 2rem;
+  }
+  
+  .sign-in-prompt h2 {
+    color: var(--primary-color, {{ branding.primary_color }});
+    margin-bottom: 0.5rem;
+  }
+  
+  .sign-in-prompt p {
+    color: var(--secondary-text);
+    margin-bottom: 1.5rem;
+  }
+  
+  .sign-in-button {
+    background: var(--primary-color, {{ branding.primary_color }});
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+  }
+  
+  .sign-in-button:hover {
+    background: var(--primary-hover, #1565c0);
+  }
+</style>

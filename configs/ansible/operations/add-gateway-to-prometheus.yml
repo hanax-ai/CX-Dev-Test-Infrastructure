@@ -1,0 +1,40 @@
+---
+- name: Add API Gateway to Prometheus Scrape Configuration
+  hosts: hx-metric-server
+  become: yes
+  tasks:
+    - name: Add Citadel API Gateway scrape job to Prometheus config
+      blockinfile:
+        path: /etc/prometheus/prometheus.yml
+        marker: "# {mark} CITADEL API GATEWAY NEW"
+        block: |
+          # Citadel API Gateway - New Deployment (hx-api-gateway-server)
+          - job_name: "citadel-gateway-api"
+            static_configs:
+              - targets: ["192.168.10.39:8000"]
+                labels:
+                  component: "api-gateway"
+                  environment: "prod"
+                  instance: "hx-api-gateway-server"
+                  service: "citadel-gateway"
+            metrics_path: "/metrics"
+            scrape_interval: 15s
+        backup: yes
+
+    - name: Reload Prometheus configuration
+      uri:
+        url: http://localhost:9090/-/reload
+        method: POST
+      register: reload_result
+      failed_when: reload_result.status != 200
+
+    - name: Validate Prometheus targets
+      uri:
+        url: http://localhost:9090/api/v1/targets
+        return_content: yes
+      register: targets_result
+      failed_when: targets_result.status != 200
+
+    - name: Display target status
+      debug:
+        msg: "Prometheus reload successful. Check targets at http://192.168.10.37:9090/targets"

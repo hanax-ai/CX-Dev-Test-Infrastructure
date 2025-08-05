@@ -1,0 +1,40 @@
+---
+# Metrics Servers Configuration
+# Group: metrics_servers
+# Servers: hx-metrics-server
+
+# Prometheus Configuration
+prometheus_port: 9090
+prometheus_data_retention: "30d"
+prometheus_storage_path: "/opt/prometheus/data"
+prometheus_config_path: "/etc/prometheus"
+
+# Grafana Configuration
+grafana_port: 3000
+grafana_admin_user: "admin"
+grafana_admin_password: "{{ vault_grafana_admin_password }}"
+grafana_data_path: "/var/lib/grafana"
+
+# Node Exporter Configuration
+node_exporter_port: 9100
+node_exporter_enabled: true
+
+# Service Management
+metrics_services:
+  - prometheus
+  - grafana
+  - node_exporter
+
+# Monitoring Targets
+monitoring_targets:
+  - "192.168.10.38:9100"  # hx-web-server
+  - "192.168.10.39:9100"  # hx-api-gateway-server
+  - "192.168.10.35:9100"  # hx-sql-database-server
+  - "192.168.10.30:9100"  # hx-vector-db-server
+  - "192.168.10.29:9100"  # hx-llm-server-01
+  - "192.168.10.28:9100"  # hx-llm-server-02
+  - "192.168.10.31:9100"  # hx-orchestration-server
+
+# Alerting Configuration
+alertmanager_enabled: true
+alertmanager_port: 9093

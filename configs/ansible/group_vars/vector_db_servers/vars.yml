@@ -1,0 +1,31 @@
+---
+# Vector Database Servers Configuration
+# Group: vector_db_servers
+# Servers: hx-vector-db-server
+
+# Qdrant Configuration
+qdrant_version: "latest"
+qdrant_port: 6333
+qdrant_grpc_port: 6334
+qdrant_data_path: "/opt/qdrant/data"
+qdrant_snapshots_path: "/opt/qdrant/snapshots"
+
+# Performance Settings
+qdrant_max_payload_size: "134217728"  # 128MB
+qdrant_storage_optimized_vector_storage: true
+qdrant_storage_on_disk_payload: true
+
+# Service Management
+vector_db_services:
+  - qdrant
+  - backup_system
+  - monitoring
+
+# Backup Configuration
+backup_enabled: true
+backup_schedule: "0 3 * * *"  # Daily at 3 AM
+backup_retention_days: 14
+
+# Monitoring
+monitoring_enabled: true
+qdrant_metrics_enabled: true

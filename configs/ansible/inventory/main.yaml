@@ -1,0 +1,152 @@
+---
+# Citadel AI OS – Canonical Ansible Inventory
+# Consolidated from inventory.yaml, monitoring-targets.yaml, inventory_phase5.yaml
+# Updated: 2025-08-04
+
+all:
+  vars:
+    ansible_user: agent0
+    ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+    ansible_python_interpreter: /usr/bin/python3
+
+  children:
+
+    # === Phase 5 Deployment Target ===
+    phase5_servers:
+      children:
+        database_servers:
+        vector_db_servers:
+        api_gateway_servers:
+        web_servers:
+        orchestration_servers:
+
+    # === Phase 4 (LLM Node Setup) ===
+    llm_servers:
+      hosts:
+        hx-llm-server-01:
+          ansible_host: 192.168.10.29
+          server_role: "chat_llm"
+          ollama_port: 11434
+          models:
+            - "llama3.1:8b"
+            - "qwen2.5:7b"
+            - "mistral:7b"
+
+        hx-llm-server-02:
+          ansible_host: 192.168.10.28
+          server_role: "instruct_llm"
+          ollama_port: 11434
+          models:
+            - "llama3.1:8b-instruct-q4_0"
+            - "qwen2.5:7b-instruct"
+            - "mistral:7b-instruct"
+
+    # === Monitoring Targets ===
+    monitoring_targets:
+      hosts:
+        hx-api-gateway-server:
+        hx-sql-database-server:
+        hx-vector-db-server:
+        hx-llm-server-01:
+        hx-llm-server-02:
+        hx-test-server:
+        hx-dev-ops-server:
+        hx-metrics-server:
+        hx-dev-server:
+        hx-orchestration-server:
+
+    # === Functional Groupings ===
+    database_servers:
+      hosts:
+        hx-sql-database-server:
+          ansible_host: 192.168.10.35
+          server_role: "primary_database"
+          services:
+            - postgresql
+            - redis
+            - monitoring
+
+    vector_db_servers:
+      hosts:
+        hx-vector-db-server:
+          ansible_host: 192.168.10.30
+          server_role: "vector_database"
+          services:
+            - qdrant
+            - backup_system
+            - monitoring
+
+    api_gateway_servers:
+      hosts:
+        hx-api-gateway-server:
+          ansible_host: 192.168.10.39
+          server_role: "api_gateway"
+          services:
+            - fastapi
+            - nginx
+            - load_balancer
+            - monitoring
+
+    web_servers:
+      hosts:
+        hx-web-server:
+          ansible_host: 192.168.10.38
+          ansible_user: agent0
+          ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+          server_role: "web_interface"
+          services:
+            - nodejs
+            - nginx
+            - clerk_auth
+
+    orchestration_servers:
+      hosts:
+        hx-orchestration-server:
+          ansible_host: 192.168.10.31
+          server_role: "orchestration_embedding"
+          ollama_port: 11434
+          services:
+            - ollama
+            - embedding_models
+            - monitoring
+          models:
+            - "nomic-embed-text:v1.5"
+
+    devops_servers:
+      hosts:
+        hx-dev-ops-server:
+          ansible_host: 192.168.10.36
+          server_role: "devops"
+          services:
+            - ci_cd
+            - monitoring
+
+    development_servers:
+      hosts:
+        hx-dev-server:
+          ansible_host: 192.168.10.33
+          server_role: "development"
+          services:
+            - testing
+            - development
+            - monitoring
+
+    test_servers:
+      hosts:
+        hx-test-server:
+          ansible_host: 192.168.10.34
+          server_role: "test"
+          services:
+            - qa
+            - testing
+            - monitoring
+
+    metrics_servers:
+      hosts:
+        hx-metrics-server:
+          ansible_host: 192.168.10.37
+          server_role: "metrics"
+          services:
+            - prometheus
+            - grafana
+            - node_exporter

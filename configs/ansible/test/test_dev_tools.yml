@@ -1,0 +1,6 @@
+---
+- name: Test development_tools role syntax
+  hosts: localhost
+  gather_facts: no
+  roles:
+    - development_tools

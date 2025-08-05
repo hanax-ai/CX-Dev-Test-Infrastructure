@@ -1,0 +1,47 @@
+# configs/ansible/deploy/dev/deploy-dev-server.yml
+---
+- name: Deploy Citadel CX-Dev Server
+  hosts: dev_servers
+  become: yes
+  gather_facts: yes
+  serial: 1
+
+  pre_tasks:
+    - name: Display target server details
+      debug:
+        msg:
+          - "Deploying to: {{ inventory_hostname }}"
+          - "IP: {{ ansible_host }}, Role: {{ server_role }}"
+
+    - name: Wait for server availability
+      wait_for_connection:
+        timeout: 60
+
+  roles:
+    - common
+    - python_env
+    - development_tools
+
+  post_tasks:
+    - name: Run dev environment validation
+      command: /opt/citadel/dev_env_check.sh
+      register: dev_check_result
+      become_user: agent0
+
+    - name: Log dev environment status
+      debug:
+        var: dev_check_result.stdout_lines
+
+    - name: Write deployment summary
+      copy:
+        content: |
+          Dev Server Deployment Complete
+          Deployment Time: {{ ansible_date_time.iso8601 }}
+          Host: {{ inventory_hostname }}
+          Python: {{ ansible_python_version }}
+          VS Code: http://{{ ansible_host }}:8080
+          SSH: agent0@{{ ansible_host }}
+        dest: /opt/citadel/deployment_status.txt
+        owner: agent0
+        group: agent0
+        mode: '0644'

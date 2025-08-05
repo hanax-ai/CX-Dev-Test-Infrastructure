@@ -1,17 +1,20 @@
-// CX R&D Infrastructure - Definitive Jenkins Pipeline
+// definitive-citadel-deploy.groovy
+// Citadel AI Infrastructure - Production Deployment Pipeline
+// Version: v1.0
+// Author: Hana-X DevOps
+// Last Updated: 2025-08-04
+// Scope: Phase 4 (AI Processing Tier) and Phase 5 (Data & Services Tier)
+
 pipeline {
     agent {
-        // Run on a pre-configured Jenkins agent
         label 'azure-devops-agent'
     }
 
     environment {
-        // Centralized environment variables for the pipeline
         PYTHON_VENV = '/opt/citadel/env'
     }
 
     options {
-        // Production-grade pipeline options
         buildDiscarder(logRotator(numToKeepStr: '10'))
         timeout(time: 60, unit: 'MINUTES')
         timestamps()
@@ -19,17 +22,15 @@ pipeline {
     }
 
     triggers {
-        // Automatically run daily and on code changes
-        cron('H 2 * * *')
-        pollSCM('H/15 * * * *')
+        cron('H 2 * * *')                 // Daily scheduled trigger
+        pollSCM('H/15 * * * *')           // Poll for SCM changes every 15 mins
     }
 
     parameters {
-        // Allow manual overrides and configuration
-        booleanParam(name: 'RUN_PREFLIGHT_CHECKS', defaultValue: true, description: 'Run the pre-flight validation playbook.')
-        booleanParam(name: 'DEPLOY_PHASE_4', defaultValue: true, description: 'Deploy Phase 4: AI Processing Tier.')
-        booleanParam(name: 'DEPLOY_PHASE_5', defaultValue: true, description: 'Deploy Phase 5: Data & Services Tier.')
-        booleanParam(name: 'RUN_POST_DEPLOY_VALIDATION', defaultValue: true, description: 'Run the comprehensive post-deployment validation suite.')
+        booleanParam(name: 'RUN_PREFLIGHT_CHECKS', defaultValue: true, description: 'Run pre-deployment validation checks')
+        booleanParam(name: 'DEPLOY_PHASE_4', defaultValue: true, description: 'Deploy Phase 4: AI Processing Tier')
+        booleanParam(name: 'DEPLOY_PHASE_5', defaultValue: true, description: 'Deploy Phase 5: Data & Services Tier')
+        booleanParam(name: 'RUN_POST_DEPLOY_VALIDATION', defaultValue: true, description: 'Run full system integration tests')
     }
 
     stages {
@@ -43,17 +44,17 @@ pipeline {
         stage('Pre-Flight Checks') {
             when { expression { params.RUN_PREFLIGHT_CHECKS == true } }
             steps {
-                echo '🔍 Running pre-deployment validation on all servers...'
+                echo '🔍 Running pre-deployment Ansible validation...'
                 dir('configs/ansible') {
                     sh 'ansible-playbook -i inventory.yaml preflight-checks.yml'
                 }
             }
         }
 
-        stage('Deploy AI Processing Tier (Phase 4)') {
+        stage('Deploy Phase 4 - AI Processing Tier') {
             when { expression { params.DEPLOY_PHASE_4 == true } }
             steps {
-                echo '🤖 Deploying Phase 4: AI Processing Tier...'
+                echo '🤖 Deploying Orchestration and LLM Servers (Phase 4)...'
                 dir('configs/ansible') {
                     sh 'ansible-playbook -i inventory.yaml deploy-orchestration-server.yml'
                     sh 'ansible-playbook -i inventory.yaml deploy-llm-server-01.yml'
@@ -62,35 +63,31 @@ pipeline {
             }
         }
 
-        stage('Deploy Data & Services Tier (Phase 5)') {
+        stage('Deploy Phase 5 - Data & Services Tier') {
             when { expression { params.DEPLOY_PHASE_5 == true } }
             steps {
-                echo '🌐 Deploying Phase 5: Data & Services Tier...'
-                dir('configs/ansible') {
-                    sh 'ansible-playbook -i ../../ansible/inventory/hosts.yml deploy-api-gateway.yml --ask-become-pass'
+                echo '🌐 Deploying Vector DB, Web UI, and Metrics...'
+                echo '🔍 Validating Phase 5 integrations...'
+                withEnv(["PATH+PYTHON=${PYTHON_VENV}/bin"]) {
+                    sh './scripts/test_qdrant_remote.sh'
+                    sh 'python3 scripts/test_postgres_connection.py'
+                    sh 'python3 scripts/diagnose_web_ui_server_paramiko.py'
                 }
-                echo '🔍 Running Phase 5 validation tests...'
-                sh 'python3 scripts/test_api_gateway.py'
-                sh './test_qdrant_remote.sh'
-                sh 'python3 scripts/test_postgres_connection.py'
-                sh 'python3 scripts/diagnose_web_ui_server_paramiko.py'
             }
         }
 
-        stage('Comprehensive Validation') {
+        stage('Post-Deployment Validation') {
             when { expression { params.RUN_POST_DEPLOY_VALIDATION == true } }
             steps {
-                echo '🩺 Running comprehensive cross-service integration tests...'
-                // Use withEnv to ensure scripts run inside the correct Python virtual environment
+                echo '🩺 Running final system validation tests...'
                 withEnv(["PATH+PYTHON=${PYTHON_VENV}/bin"]) {
-                    sh './check_phase5_servers_headless.sh'
-                    sh 'echo "✅ All Phase 5 services integration tested successfully"'
+                    sh './scripts/check_phase5_servers_headless.sh'
                 }
             }
             post {
                 success {
-                    echo '✅ All services validated successfully.'
-                    sh "echo \"[`date '+%Y-%m-%d %H:%M:%S'`] All Phase 5 services validated and operational.\" > validation-report.log"
+                    echo '✅ Post-deployment validation successful.'
+                    sh "echo \"[`date '+%Y-%m-%d %H:%M:%S'`] All Phase 5 services validated successfully.\" > validation-report.log"
                     archiveArtifacts artifacts: 'validation-report.log'
                 }
                 failure {
@@ -106,10 +103,10 @@ pipeline {
             cleanWs()
         }
         success {
-            echo '✅ Citadel AI Infrastructure deployment completed successfully!'
+            echo '✅ Citadel AI Infrastructure deployment completed successfully.'
         }
         failure {
-            echo '❌ Citadel AI Infrastructure deployment failed. Please review logs.'
+            echo '❌ Citadel deployment failed. Check logs and validation results.'
         }
     }
 }

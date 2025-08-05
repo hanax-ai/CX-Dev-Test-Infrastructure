@@ -1,0 +1,47 @@
+# configs/ansible/deploy/test/deploy-test-server.yml
+---
+- name: Deploy Citadel CX-Test Server
+  hosts: test_servers
+  become: yes
+  gather_facts: yes
+  serial: 1
+
+  pre_tasks:
+    - name: Display test server info
+      debug:
+        msg:
+          - "Deploying to: {{ inventory_hostname }}"
+          - "IP: {{ ansible_host }}, Role: {{ server_role }}"
+
+    - name: Wait for SSH connection
+      wait_for_connection:
+        timeout: 60
+
+  roles:
+    - common
+    - python_env
+    - testing_tools
+
+  post_tasks:
+    - name: Verify testing stack
+      command: /opt/citadel/test_env_check.sh
+      register: test_check_result
+      become_user: agent0
+
+    - name: Log test verification result
+      debug:
+        var: test_check_result.stdout_lines
+
+    - name: Record test deployment outcome
+      copy:
+        content: |
+          Test Server Deployment Complete
+          Deployment Time: {{ ansible_date_time.iso8601 }}
+          Host: {{ inventory_hostname }}
+          Python: {{ ansible_python_version }}
+          Test Runner: /opt/citadel/testing/run_tests.sh
+          SSH: agent0@{{ ansible_host }}
+        dest: /opt/citadel/deployment_status.txt
+        owner: agent0
+        group: agent0
+        mode: '0644'

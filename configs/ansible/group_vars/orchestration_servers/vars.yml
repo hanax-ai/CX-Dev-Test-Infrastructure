@@ -1,0 +1,39 @@
+# group_vars/orchestration/vars.yml
+# Orchestration server specific variables
+
+# Ollama configuration
+ollama:
+  installer:
+    url: "https://ollama.com/install.sh"
+    # SHA256 checksum of the Ollama installer script
+    # Last verified: 2025-08-04
+    # To update: curl -fsSL https://ollama.com/install.sh | sha256sum
+    checksum: "sha256:9f5f4c4ed21821ba9b847bf3607ae75452283276cd8f52d2f2b38ea9f27af344"
+  service:
+    host: "0.0.0.0"
+    port: 11434
+    origins: "*"
+    environment:
+      cuda_visible_devices: "0"
+      cuda_path: "/usr/local/cuda-12.9"
+  models:
+    directory: "/opt/ai_models"
+
+# Embedding models configuration
+embedding_models:
+  - name: "mxbai-embed-large"
+    tag: "335m"
+    size: "334M"
+  - name: "nomic-embed-text"
+    tag: "v1.5"
+    size: "137M"
+  - name: "all-minilm"
+    tag: "33m"
+    size: "23M"
+
+# Security configuration
+security:
+  log_directory: "/var/log"
+  deployment_log: "ollama-deployment-security.log"
+  firewall:
+    allowed_network: "192.168.10.0/24"

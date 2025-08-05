@@ -1,0 +1,85 @@
+---
+# Main task list for embeddings role
+
+- name: Verify CUDA installation
+  shell: bash -c 'source /etc/profile.d/cuda.sh && nvcc --version'
+  register: cuda_verification
+  changed_when: false
+  failed_when: cuda_verification.rc != 0
+
+- name: Install Ollama if missing
+  shell: curl -fsSL {{ ollama.installer.url }} | sh
+  register: ollama_install
+  changed_when: "'Ollama is now installed' in ollama_install.stdout or ollama_install.rc == 0"
+
+- name: Inject environment variables into Ollama systemd service
+  blockinfile:
+    path: "/etc/systemd/system/ollama.service"
+    block: |
+      Environment="OLLAMA_HOST={{ ollama.service.host }}"
+      Environment="OLLAMA_ORIGINS={{ ollama.service.origins }}"
+      Environment="OLLAMA_MODELS={{ ollama.models.directory }}"
+      Environment="CUDA_VISIBLE_DEVICES={{ ollama.service.environment.cuda_visible_devices }}"
+      Environment="PATH={{ ollama.service.environment.cuda_path }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      Environment="LD_LIBRARY_PATH={{ ollama.service.environment.cuda_path }}/lib64"
+    marker: "# {mark} ANSIBLE MANAGED OLLAMA ENVIRONMENT"
+    insertafter: "\\[Service\\]"
+    backup: yes
+  notify: restart_ollama
+
+- name: Ensure model directory exists and is owned by ollama
+  file:
+    path: "{{ ollama.models.directory }}"
+    state: directory
+    owner: ollama
+    group: ollama
+    mode: '0755'
+
+- name: Start and enable Ollama service
+  systemd:
+    name: ollama
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Wait for Ollama API to respond
+  wait_for:
+    port: "{{ ollama.service.port }}"
+    host: "{{ ollama.service.host }}"
+    delay: 5
+    timeout: 60
+
+- name: Verify Ollama is listening
+  uri:
+    url: "http://{{ ansible_default_ipv4.address }}:{{ ollama.service.port }}/api/tags"
+    method: GET
+    timeout: 10
+  register: ollama_api_test
+  retries: 3
+  delay: 5
+
+- name: Pull embedding models
+  shell: "ollama pull {{ item.name }}:{{ item.tag }}"
+  loop: "{{ embedding_models }}"
+  become_user: root
+  environment:
+    OLLAMA_HOST: "http://localhost:{{ ollama.service.port }}"
+
+- name: Allow firewall access from internal network
+  ufw:
+    rule: allow
+    port: "{{ ollama.service.port }}"
+    from_ip: "{{ security.firewall.allowed_network }}"
+    comment: "Ollama Embedding API - Internal"
+
+- name: Test embedding functionality with default model
+  uri:
+    url: "http://{{ ansible_default_ipv4.address }}:{{ ollama.service.port }}/api/embeddings"
+    method: POST
+    body_format: json
+    body:
+      model: "{{ embedding_models[0].name }}:{{ embedding_models[0].tag }}"
+      prompt: "test embedding"
+    timeout: 30
+  register: embedding_test
+  ignore_errors: yes

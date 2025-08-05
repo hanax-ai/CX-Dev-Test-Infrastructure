@@ -1,0 +1,39 @@
+# Default variables for embeddings role
+
+ollama_installer_url: "https://ollama.com/install.sh"
+ollama_installer_checksum: "sha256:9f5f4c4ed21821ba9b847bf3607ae75452283276cd8f52d2f2b38ea9f27af344"
+
+ollama_service:
+  host: "0.0.0.0"
+  port: 11434
+  origins: "*"
+  environment:
+    cuda_visible_devices: "0"
+    cuda_path: "/usr/local/cuda-12.9"
+
+ollama:
+  installer:
+    url: "{{ ollama_installer_url }}"
+    checksum: "{{ ollama_installer_checksum }}"
+  service: "{{ ollama_service }}"
+  models:
+    directory: "{{ model_dir }}"
+
+embedding_models:
+  - name: "nomic-embed-text"
+    tag: "v1.5"
+    size: "3.3GB"
+  - name: "mxbai-embed-large"
+    tag: "335m"
+    size: "1.2GB"
+  - name: "all-minilm"
+    tag: "l6-v2"
+    size: "67M"
+
+model_dir: "/opt/ai_models"
+
+security:
+  log_directory: "/var/log"
+  deployment_log: "ollama-deployment-security.log"
+  firewall:
+    allowed_network: "192.168.10.0/24"

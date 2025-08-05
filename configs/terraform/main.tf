@@ -1,6 +1,6 @@
-# CX R&D Infrastructure - Terraform Configuration
+# HX R&D Infrastructure - Terraform Configuration
 # Main infrastructure definition for Citadel AI Operating System
-# Updated: July 31, 2025
+# Updated: August 4, 2025
 
 terraform {
   required_version = ">= 1.0"
@@ -16,75 +16,85 @@ terraform {
   }
 }
 
-# Variables for CX Infrastructure
-variable "cx_infrastructure_servers" {
-  description = "Map of CX R&D Infrastructure servers"
+# Infrastructure server map - Fully aligned with HX inventory
+variable "hx_infrastructure_servers" {
+  description = "Map of HX R&D Infrastructure servers"
   type = map(object({
     ip_address = string
     role       = string
     port       = number
   }))
   default = {
-    "cx-web" = {
-      ip_address = "192.168.10.28"
-      role       = "web-server"
-      port       = 80
+    "hx-web-server" = {
+      ip_address = "192.168.10.38"
+      role       = "web-ui"
+      port       = 8080
     }
-    "cx-api-gateway" = {
-      ip_address = "192.168.10.29"
+    "hx-api-gateway-server" = {
+      ip_address = "192.168.10.39"
       role       = "api-gateway"
       port       = 8000
     }
-    "cx-database" = {
-      ip_address = "192.168.10.30"
+    "hx-sql-database-server" = {
+      ip_address = "192.168.10.35"
       role       = "database"
       port       = 5432
     }
-    "cx-vector-db" = {
-      ip_address = "192.168.10.31"
+    "hx-vector-db-server" = {
+      ip_address = "192.168.10.30"
       role       = "vector-database"
       port       = 6333
     }
-    "cx-llm-orchestration" = {
-      ip_address = "192.168.10.32"
-      role       = "llm-orchestration"
+    "hx-llm-server-01" = {
+      ip_address = "192.168.10.29"
+      role       = "llm-server-chat"
+      port       = 11434
+    }
+    "hx-llm-server-02" = {
+      ip_address = "192.168.10.28"
+      role       = "llm-server-instruct"
+      port       = 11434
+    }
+    "hx-orchestration-server" = {
+      ip_address = "192.168.10.31"
+      role       = "orchestration"
       port       = 8080
     }
-    "cx-test" = {
-      ip_address = "192.168.10.33"
-      role       = "test-server"
-      port       = 3000
-    }
-    "cx-metric" = {
+    "hx-test-server" = {
       ip_address = "192.168.10.34"
-      role       = "metrics-monitoring"
-      port       = 9090
+      role       = "test"
+      port       = 8080
     }
-    "cx-dev" = {
-      ip_address = "192.168.10.35"
+    "hx-dev-server" = {
+      ip_address = "192.168.10.33"
       role       = "development"
       port       = 8080
     }
-    "cx-devops" = {
+    "hx-dev-ops-server" = {
       ip_address = "192.168.10.36"
-      role       = "devops-cicd"
+      role       = "devops"
       port       = 8080
+    }
+    "hx-metrics-server" = {
+      ip_address = "192.168.10.37"
+      role       = "metrics"
+      port       = 9090
     }
   }
 }
 
-# Local file generation for dynamic configurations
+# Dynamic Ansible inventory generation
 resource "local_file" "ansible_inventory" {
   content = templatefile("${path.module}/templates/inventory.tpl", {
-    servers = var.cx_infrastructure_servers
+    servers = var.hx_infrastructure_servers
   })
   filename = "${path.module}/../ansible/inventory/dynamic_hosts"
 }
 
-# Generate server configuration files
+# Per-server configuration file generation
 resource "local_file" "server_configs" {
-  for_each = var.cx_infrastructure_servers
-  
+  for_each = var.hx_infrastructure_servers
+
   content = templatefile("${path.module}/templates/server_config.tpl", {
     server_name = each.key
     ip_address  = each.value.ip_address
@@ -94,22 +104,22 @@ resource "local_file" "server_configs" {
   filename = "${path.module}/server-configs/${each.key}.conf"
 }
 
-# Health check script generation
+# Auto-generated health check script
 resource "local_file" "health_check_script" {
   content = templatefile("${path.module}/templates/health_check.tpl", {
-    servers = var.cx_infrastructure_servers
+    servers = var.hx_infrastructure_servers
   })
   filename = "${path.module}/../../scripts/health-check-generated.sh"
   file_permission = "0755"
 }
 
-# Output server information
-output "cx_infrastructure_summary" {
-  description = "Summary of CX R&D Infrastructure servers"
+# Output summary of infrastructure
+output "hx_infrastructure_summary" {
+  description = "Summary of HX R&D Infrastructure servers"
   value = {
-    total_servers = length(var.cx_infrastructure_servers)
+    total_servers = length(var.hx_infrastructure_servers)
     servers = {
-      for name, config in var.cx_infrastructure_servers : name => {
+      for name, config in var.hx_infrastructure_servers : name => {
         ip      = config.ip_address
         role    = config.role
         port    = config.port
@@ -119,19 +129,19 @@ output "cx_infrastructure_summary" {
   }
 }
 
-# Output for Ansible integration
+# Output Ansible inventory path
 output "ansible_inventory_path" {
   description = "Path to generated Ansible inventory"
   value       = local_file.ansible_inventory.filename
 }
 
-# Generate deployment metadata
+# Local deployment metadata
 locals {
   deployment_metadata = {
-    infrastructure_name = "CX R&D Infrastructure"
+    infrastructure_name = "HX R&D Infrastructure"
     deployment_date     = timestamp()
     terraform_version   = "1.12.2"
-    total_servers       = length(var.cx_infrastructure_servers)
+    total_servers       = length(var.hx_infrastructure_servers)
     environment         = "development"
     project             = "Citadel AI Operating System"
   }
@@ -139,6 +149,6 @@ locals {
 
 # Save deployment metadata
 resource "local_file" "deployment_metadata" {
-  content = jsonencode(local.deployment_metadata)
+  content  = jsonencode(local.deployment_metadata)
   filename = "${path.module}/deployment-metadata.json"
 }

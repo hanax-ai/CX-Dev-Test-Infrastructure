@@ -1,0 +1,6 @@
+---
+- name: Test Embedding Models Role Syntax
+  hosts: hx-orc-server
+  become: yes
+  roles:
+    - deploy_embedding_models

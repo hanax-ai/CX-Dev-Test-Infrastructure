@@ -1,0 +1,32 @@
+---
+# Database Servers Configuration
+# Group: database_servers
+# Servers: hx-sql-database-server
+
+# PostgreSQL Configuration
+postgresql_version: "15"
+postgresql_port: 5432
+postgresql_database: "citadel_ai"
+postgresql_max_connections: 100
+postgresql_shared_buffers: "256MB"
+
+# Redis Configuration
+redis_port: 6379
+redis_max_memory: "1gb"
+redis_max_memory_policy: "allkeys-lru"
+
+# Service Management
+database_services:
+  - postgresql
+  - redis
+  - monitoring
+
+# Backup Configuration
+backup_enabled: true
+backup_schedule: "0 2 * * *"  # Daily at 2 AM
+backup_retention_days: 30
+
+# Monitoring
+monitoring_enabled: true
+postgres_exporter_port: 9187
+redis_exporter_port: 9121

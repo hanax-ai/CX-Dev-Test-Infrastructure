@@ -174,11 +174,17 @@ pip install -r requirements-dev.txt # Development dependencies
 
 ```text
 /opt/CX-Dev-Test-Infrastructure/
+├── .github/
+│   └── instructions/              # GitHub automation and instructions
 ├── configs/
 │   ├── ansible/
-│   │   ├── inventory.yml           # YAML-based server inventory (2047 bytes)
-│   │   ├── inventory/hosts         # Static inventory file
-│   │   └── site.yml               # Main Ansible playbook (1287 bytes)
+│   │   ├── inventory/
+│   │   │   ├── hosts              # Primary server inventory
+│   │   │   ├── hosts.yml          # YAML-based server inventory
+│   │   │   └── monitoring-inventory.yaml  # Monitoring-specific inventory
+│   │   ├── roles/                 # Ansible roles for service deployment
+│   │   ├── playbooks/             # Deployment playbooks
+│   │   └── deploy-*.yml           # Service-specific deployment playbooks
 │   ├── terraform/
 │   │   ├── main.tf                # Infrastructure definitions
 │   │   ├── templates/             # Dynamic configuration templates
@@ -186,11 +192,21 @@ pip install -r requirements-dev.txt # Development dependencies
 │   └── jenkins/
 │       ├── Jenkinsfile            # Declarative CI/CD pipeline
 │       └── pipeline-config.yml    # Pipeline configuration
-├── scripts/                       # Installation and utility scripts
-├── CX-Documents/                  # Documentation and status reports
+├── scripts/                       # All deployment and utility scripts
+│   ├── install-*.sh               # Installation scripts for DevOps tools
+│   ├── deploy-*.sh                # Deployment automation scripts
+│   ├── check_*.sh                 # Server validation scripts
+│   ├── test_*.py                  # Testing and validation utilities
+│   └── health-check.sh            # Infrastructure health monitoring
+├── CX-Documents/                  # Official project documentation
+│   ├── CX-RnD-Infrastructure-Architecture.md  # Primary architecture doc
+│   ├── CX-*-Configuration.md      # Server-specific configuration guides
 │   └── CX-Status/                 # Server status documentation
-├── requirements.txt               # Python production dependencies
-└── requirements-dev.txt           # Python development dependencies
+├── x-Docs/                        # Additional documentation and analysis
+├── x-Archive/                     # Deprecated and archived materials
+├── logs/                          # Deployment and operational logs
+├── requirements*.txt              # Python dependencies
+└── README.md                      # This file - primary project overview
 ```
 
 ### Ansible Configuration

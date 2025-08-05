@@ -1,0 +1,50 @@
+---
+# Citadel Infrastructure Deployment – Web Server (.38)
+# Component: Citadel Web UI (Svelte + Clerk + PM2 + Nginx)
+# Path: /opt/CX-Dev-Test-Infrastructure/configs/ansible/deploy/web/deploy-web-server.yml
+# Role: citadel_web_ui
+# Inventory Group: web_servers
+# Service: citadel_web_ui.service
+# Port: 3000 (internal), reverse-proxied to 80/443
+# Dependencies: API Gateway (.39), PostgreSQL/Redis (.35)
+
+- name: Deploy Citadel Web UI Server
+  hosts: web_servers
+  become: yes
+  gather_facts: yes
+
+  vars:
+    internal_network: "192.168.10.0/24"
+    tls_enabled: true
+    validate_internal_certs: false
+
+  pre_tasks:
+    - name: Wait for Citadel Web Server to become reachable
+      wait_for_connection:
+        timeout: 60
+
+  roles:
+    - common
+    - citadel_web_ui
+
+  post_tasks:
+    - name: Verify Web UI endpoint is online
+      uri:
+        url: "http://{{ ansible_default_ipv4.address }}:3000"
+        method: GET
+        timeout: 10
+      register: web_check
+      failed_when: web_check.status != 200
+
+    - name: Save deployment confirmation metadata
+      copy:
+        content: |
+          === CITADEL WEB UI DEPLOYMENT COMPLETE ===
+          Host: {{ ansible_hostname }}
+          IP: {{ ansible_default_ipv4.address }}
+          Status: {{ 'OK' if web_check.status == 200 else 'ERROR' }}
+          Time: {{ ansible_date_time.iso8601 }}
+        dest: /opt/citadel/deployment_status.txt
+        owner: agent0
+        group: agent0
+        mode: '0644'

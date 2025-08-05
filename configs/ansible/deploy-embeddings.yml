@@ -1,7 +1,0 @@
----
-- name: Deploy specialized embedding models to the orchestration server
-  hosts: hx-orc-server
-  become: true
-
-  roles:
-    - deploy_embedding_models

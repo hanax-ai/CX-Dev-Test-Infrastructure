@@ -1,0 +1,7 @@
+# File: deploy/metric/deploy-metrics-servers.yml
+---
+- name: Deploy Citadel Metrics Server (Prometheus)
+  hosts: metrics_servers
+  become: yes
+  roles:
+    - monitoring_prometheus

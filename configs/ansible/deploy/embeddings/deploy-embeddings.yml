@@ -1,0 +1,25 @@
+---
+# Playbook: deploy-embeddings.yml
+# Description: Deploy Embedding Models via 'embeddings' role
+# Target: Orchestration Server (Phase 5.1)
+# Usage: ansible-playbook deploy-embeddings.yml -l hx-orchestration-server
+
+- name: Deploy Orchestration Server - Embedding Models (Phase 5.1)
+  hosts: orchestration_servers
+  become: yes
+  gather_facts: yes
+
+  vars:
+    server_specific_models:
+      - name: "nomic-embed-text"
+        tag: "v1.5"
+        size: "137M"
+      - name: "mxbai-embed-large"
+        tag: "335m"
+        size: "334M"
+      - name: "all-minilm"
+        tag: "l6-v2"
+        size: "67M"
+
+  roles:
+    - embeddings

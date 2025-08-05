@@ -5,12 +5,16 @@ Target: 192.168.10.35:5432
 """
 
 import psycopg2
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 host = "192.168.10.35"
 port = 5432
 database = "citadel_llm_db"
 user = "citadel_llm_user"
-password = "CitadelLLM#2025$SecurePass!"
+password = os.getenv('POSTGRES_PASSWORD')
 
 try:
     print(f"Connecting to PostgreSQL at {host}:{port} as user '{user}'...")

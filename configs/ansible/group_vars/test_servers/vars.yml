@@ -1,0 +1,28 @@
+---
+# Test Servers Configuration
+# Group: test_servers
+# Servers: hx-test-server
+
+# Testing Framework Configuration
+pytest_enabled: true
+playwright_enabled: true
+selenium_enabled: true
+
+# Test Environment
+test_database_enabled: true
+test_api_endpoint: "http://192.168.10.39:8000"
+test_web_endpoint: "http://192.168.10.38:3000"
+
+# Performance Testing
+load_testing_enabled: true
+stress_testing_enabled: true
+
+# Service Management
+test_services:
+  - qa
+  - testing
+  - monitoring
+
+# Monitoring
+monitoring_enabled: true
+test_metrics_enabled: true

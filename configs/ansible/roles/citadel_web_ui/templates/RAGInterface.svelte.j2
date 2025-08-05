@@ -1,0 +1,618 @@
+<script>
+  import { onMount } from 'svelte';
+  import { writable } from 'svelte/store';
+  
+  // API Gateway configuration from Ansible variables
+  const API_BASE_URL = '{{ api_gateway.base_url }}';
+  const RAG_ENDPOINT = '{{ api_gateway.endpoints.rag }}';
+  
+  // Component state
+  export const documents = writable([]);
+  export const searchResults = writable([]);
+  export const isIndexing = writable(false);
+  
+  let query = '';
+  let selectedDocuments = [];
+  let ragResponse = '';
+  let isQuerying = false;
+  let uploadedFiles = [];
+  let dragOver = false;
+  
+  // Initialize RAG interface
+  onMount(async () => {
+    await loadDocumentIndex();
+  });
+  
+  // Load existing document index
+  async function loadDocumentIndex() {
+    try {
+      const response = await fetch(`${API_BASE_URL}${RAG_ENDPOINT}/documents`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('clerk_session')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const docs = await response.json();
+        documents.set(docs);
+      }
+    } catch (error) {
+      console.error('Failed to load document index:', error);
+    }
+  }
+  
+  // Handle file upload
+  async function handleFileUpload(files) {
+    if (!files || files.length === 0) return;
+    
+    isIndexing.set(true);
+    
+    try {
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('metadata', JSON.stringify({
+          filename: file.name,
+          size: file.size,
+          type: file.type,
+          uploaded_at: new Date().toISOString()
+        }));
+        
+        const response = await fetch(`${API_BASE_URL}${RAG_ENDPOINT}/upload`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('clerk_session')}`
+          },
+          body: formData
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          uploadedFiles.push({
+            name: file.name,
+            status: 'uploaded',
+            id: result.document_id
+          });
+        } else {
+          uploadedFiles.push({
+            name: file.name,
+            status: 'error',
+            error: await response.text()
+          });
+        }
+      }
+      
+      // Refresh document index
+      await loadDocumentIndex();
+    } catch (error) {
+      console.error('Upload failed:', error);
+    } finally {
+      isIndexing.set(false);
+    }
+  }
+  
+  // Handle drag and drop
+  function handleDrop(event) {
+    event.preventDefault();
+    dragOver = false;
+    
+    const files = Array.from(event.dataTransfer.files);
+    handleFileUpload(files);
+  }
+  
+  function handleDragOver(event) {
+    event.preventDefault();
+    dragOver = true;
+  }
+  
+  function handleDragLeave(event) {
+    event.preventDefault();
+    dragOver = false;
+  }
+  
+  // Perform RAG query
+  async function performRAGQuery() {
+    if (!query.trim() || isQuerying) return;
+    
+    isQuerying = true;
+    ragResponse = '';
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}${RAG_ENDPOINT}/query`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('clerk_session')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          query: query,
+          document_ids: selectedDocuments,
+          max_results: 5,
+          include_context: true,
+          similarity_threshold: 0.7
+        })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        ragResponse = result.answer;
+        searchResults.set(result.sources || []);
+      } else {
+        throw new Error(`RAG query failed: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('RAG query error:', error);
+      ragResponse = `Error: ${error.message}`;
+    } finally {
+      isQuerying = false;
+    }
+  }
+  
+  // Handle Enter key for queries
+  function handleKeyPress(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      performRAGQuery();
+    }
+  }
+  
+  // Toggle document selection
+  function toggleDocumentSelection(docId) {
+    if (selectedDocuments.includes(docId)) {
+      selectedDocuments = selectedDocuments.filter(id => id !== docId);
+    } else {
+      selectedDocuments = [...selectedDocuments, docId];
+    }
+  }
+  
+  // Delete document from index
+  async function deleteDocument(docId) {
+    try {
+      const response = await fetch(`${API_BASE_URL}${RAG_ENDPOINT}/documents/${docId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('clerk_session')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        await loadDocumentIndex();
+        selectedDocuments = selectedDocuments.filter(id => id !== docId);
+      }
+    } catch (error) {
+      console.error('Failed to delete document:', error);
+    }
+  }
+  
+  // Format file size
+  function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+</script>
+
+<div class="rag-interface">
+  <div class="rag-header">
+    <h1>RAG Document Interface</h1>
+    <p>Upload documents and perform intelligent retrieval-augmented generation queries</p>
+  </div>
+  
+  <div class="rag-content">
+    <!-- Document Upload Section -->
+    <div class="upload-section">
+      <h2>Document Upload</h2>
+      
+      <div 
+        class="upload-area"
+        class:drag-over={dragOver}
+        on:drop={handleDrop}
+        on:dragover={handleDragOver}
+        on:dragleave={handleDragLeave}
+      >
+        <div class="upload-content">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7,10 12,15 17,10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <p>Drop files here or click to upload</p>
+          <p class="upload-hint">Supports PDF, TXT, DOCX, and Markdown files</p>
+        </div>
+        
+        <input 
+          type="file" 
+          multiple 
+          accept=".pdf,.txt,.docx,.md"
+          on:change={(e) => handleFileUpload(e.target.files)}
+          style="display: none;"
+        />
+      </div>
+      
+      {#if $isIndexing}
+        <div class="indexing-status">
+          <div class="spinner"></div>
+          <span>Indexing documents...</span>
+        </div>
+      {/if}
+      
+      {#if uploadedFiles.length > 0}
+        <div class="upload-results">
+          <h3>Upload Results</h3>
+          {#each uploadedFiles as file}
+            <div class="upload-result" class:error={file.status === 'error'}>
+              <span class="filename">{file.name}</span>
+              <span class="status">{file.status}</span>
+              {#if file.error}
+                <span class="error-msg">{file.error}</span>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+    
+    <!-- Document Index Section -->
+    <div class="document-index">
+      <h2>Document Index ({$documents.length} documents)</h2>
+      
+      {#if $documents.length > 0}
+        <div class="document-list">
+          {#each $documents as doc}
+            <div class="document-item">
+              <label class="document-checkbox">
+                <input 
+                  type="checkbox" 
+                  checked={selectedDocuments.includes(doc.id)}
+                  on:change={() => toggleDocumentSelection(doc.id)}
+                />
+                <span class="checkmark"></span>
+              </label>
+              
+              <div class="document-info">
+                <div class="document-name">{doc.filename}</div>
+                <div class="document-meta">
+                  {formatFileSize(doc.size)} • 
+                  {new Date(doc.uploaded_at).toLocaleDateString()} •
+                  {doc.chunks || 0} chunks
+                </div>
+              </div>
+              
+              <button 
+                class="delete-btn"
+                on:click={() => deleteDocument(doc.id)}
+                title="Delete document"
+              >
+                ×
+              </button>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <p class="no-documents">No documents uploaded yet. Upload some documents to get started.</p>
+      {/if}
+    </div>
+    
+    <!-- Query Section -->
+    <div class="query-section">
+      <h2>RAG Query</h2>
+      
+      <div class="query-input">
+        <textarea
+          bind:value={query}
+          on:keypress={handleKeyPress}
+          placeholder="Ask a question about your documents... (Enter to search)"
+          rows="3"
+          disabled={isQuerying || $documents.length === 0}
+        ></textarea>
+        
+        <button 
+          class="query-btn"
+          on:click={performRAGQuery}
+          disabled={!query.trim() || isQuerying || $documents.length === 0}
+        >
+          {#if isQuerying}
+            <div class="button-spinner"></div>
+            Searching...
+          {:else}
+            Search
+          {/if}
+        </button>
+      </div>
+      
+      {#if selectedDocuments.length > 0}
+        <div class="selected-docs">
+          <span>Searching in {selectedDocuments.length} selected document(s)</span>
+        </div>
+      {/if}
+    </div>
+    
+    <!-- Results Section -->
+    {#if ragResponse}
+      <div class="results-section">
+        <h2>Answer</h2>
+        <div class="rag-answer">
+          {ragResponse}
+        </div>
+        
+        {#if $searchResults.length > 0}
+          <h3>Sources</h3>
+          <div class="search-sources">
+            {#each $searchResults as source}
+              <div class="source-item">
+                <div class="source-header">
+                  <span class="source-document">{source.document}</span>
+                  <span class="source-score">Score: {source.score?.toFixed(3) || 'N/A'}</span>
+                </div>
+                <div class="source-content">
+                  {source.content}
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {/if}
+  </div>
+</div>
+
+<style>
+  .rag-interface {
+    padding: 1.5rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    background: var(--bg-primary);
+  }
+  
+  .rag-header {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+  
+  .rag-header h1 {
+    color: var(--primary-color, {{ branding.primary_color }});
+    margin: 0 0 0.5rem 0;
+  }
+  
+  .rag-header p {
+    color: var(--secondary-text);
+    margin: 0;
+  }
+  
+  .rag-content {
+    display: grid;
+    gap: 2rem;
+  }
+  
+  .upload-section,
+  .document-index,
+  .query-section,
+  .results-section {
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 1.5rem;
+    border: 1px solid var(--border-color);
+  }
+  
+  .upload-area {
+    border: 2px dashed var(--border-color);
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  .upload-area:hover,
+  .upload-area.drag-over {
+    border-color: var(--primary-color, {{ branding.primary_color }});
+    background: var(--primary-bg-light);
+  }
+  
+  .upload-content svg {
+    color: var(--secondary-text);
+    margin-bottom: 1rem;
+  }
+  
+  .upload-hint {
+    font-size: 0.9rem;
+    color: var(--secondary-text);
+  }
+  
+  .indexing-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    color: var(--primary-color, {{ branding.primary_color }});
+  }
+  
+  .spinner,
+  .button-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid transparent;
+    border-top: 2px solid currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  
+  .document-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .document-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-primary);
+  }
+  
+  .document-checkbox {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  
+  .document-info {
+    flex: 1;
+  }
+  
+  .document-name {
+    font-weight: 500;
+    color: var(--primary-text);
+  }
+  
+  .document-meta {
+    font-size: 0.8rem;
+    color: var(--secondary-text);
+    margin-top: 0.25rem;
+  }
+  
+  .delete-btn {
+    background: none;
+    border: none;
+    color: var(--error-color, #f44336);
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+  }
+  
+  .delete-btn:hover {
+    background: var(--error-bg-light);
+  }
+  
+  .query-input {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-end;
+  }
+  
+  .query-input textarea {
+    flex: 1;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.75rem;
+    font-family: inherit;
+    font-size: 0.95rem;
+    resize: vertical;
+    background: var(--bg-primary);
+    color: var(--primary-text);
+  }
+  
+  .query-btn {
+    background: var(--primary-color, {{ branding.primary_color }});
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    min-width: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  
+  .query-btn:disabled {
+    background: var(--disabled-bg, #ccc);
+    cursor: not-allowed;
+  }
+  
+  .selected-docs {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--primary-color, {{ branding.primary_color }});
+  }
+  
+  .rag-answer {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 1rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    color: var(--primary-text);
+  }
+  
+  .search-sources {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .source-item {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.75rem;
+  }
+  
+  .source-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  
+  .source-document {
+    font-weight: 500;
+    color: var(--primary-color, {{ branding.primary_color }});
+  }
+  
+  .source-score {
+    font-size: 0.8rem;
+    color: var(--secondary-text);
+  }
+  
+  .source-content {
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--primary-text);
+  }
+  
+  .no-documents {
+    text-align: center;
+    color: var(--secondary-text);
+    font-style: italic;
+  }
+  
+  .upload-results {
+    margin-top: 1rem;
+  }
+  
+  .upload-result {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    border-radius: 4px;
+    background: var(--success-bg-light);
+  }
+  
+  .upload-result.error {
+    background: var(--error-bg-light);
+  }
+  
+  .error-msg {
+    font-size: 0.8rem;
+    color: var(--error-color);
+  }
+</style>

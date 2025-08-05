@@ -1,0 +1,18 @@
+# ollama.service systemd template - placeholder
+[Unit]
+Description=Ollama Model Service
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/ollama
+Restart=always
+User=ollama
+Group=ollama
+Environment="OLLAMA_HOST={{ ollama_service.host }}"
+Environment="OLLAMA_ORIGINS={{ ollama_service.origins }}"
+Environment="CUDA_VISIBLE_DEVICES={{ ollama_service.environment.cuda_visible_devices }}"
+Environment="PATH={{ ollama_service.environment.cuda_path }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="LD_LIBRARY_PATH={{ ollama_service.environment.cuda_path }}/lib64"
+
+[Install]
+WantedBy=multi-user.target

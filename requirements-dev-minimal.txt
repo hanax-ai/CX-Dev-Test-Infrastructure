@@ -1,0 +1,32 @@
+# CX R&D Infrastructure - Development Dependencies
+# Core development requirements only
+# Updated: July 31, 2025
+
+# Include production requirements
+-r requirements.txt
+
+# Core development tools
+black==24.4.2
+flake8==7.1.0
+mypy==1.11.1
+
+# Testing frameworks
+pytest==8.3.2
+pytest-cov==5.0.0
+pytest-mock==3.14.0
+
+# Development utilities
+ipython==8.26.0
+jupyter==1.0.0
+
+# API testing
+httpie==3.2.3
+
+# Documentation
+sphinx==7.4.7
+
+# Code quality
+bandit==1.7.9
+
+# Performance profiling
+py-spy==0.3.14

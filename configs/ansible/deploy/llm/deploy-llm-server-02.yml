@@ -1,0 +1,166 @@
+---
+# Playbook: deploy-llm-server-02.yml  
+# Description: Deploy Instruct Models to LLM Server 02 (Phase 4.3)
+# Target: Use canonical inventory groups from main.yaml
+# Usage: ansible-playbook deploy-llm-server-02.yml -l hx-llm-server-02
+
+- name: Deploy LLM Server 02 - Instruct Models (Phase 4.3)
+  hosts: llm_servers
+  gather_facts: yes
+  become: yes
+  vars:
+    # Override specific models for server-02 (instruct models)
+    server_specific_models:
+      - name: "llama3.1"
+        tag: "8b-instruct-q4_0"
+      - name: "qwen2.5"
+        tag: "7b-instruct"
+      - name: "mistral"
+        tag: "7b-instruct"
+      - name: "qwen3"
+        tag: "8b"
+      - name: "mistral"
+        tag: "7b"
+    additional_model_id: "Llama4-Maverick-Instruct"
+    additional_model_url: "https://ollama.llm.maverick.download/path-to-signed-url"
+
+  tasks:
+    - name: 1. Validate target server for instruct models
+      fail:
+        msg: "This playbook deploys instruct models - ensure you're targeting the correct server with -l flag"
+      when: 
+        - inventory_hostname not in groups['llm_servers']
+        - ansible_run_tags is not defined or 'force' not in ansible_run_tags
+
+    - name: 2. Verify CUDA environment
+      shell: bash -c 'source /etc/profile.d/cuda.sh && nvcc --version'
+      register: cuda_verification
+      changed_when: false
+      failed_when: cuda_verification.rc != 0
+
+    - name: 3. Display CUDA info
+      debug:
+        msg: "CUDA Detected: {{ cuda_verification.stdout }}"
+
+    - name: 4. Install Ollama (if not already)
+      shell: curl -fsSL https://ollama.com/install.sh | sh
+      register: ollama_install
+      changed_when: "'Ollama is now installed' in ollama_install.stdout or ollama_install.rc == 0"
+
+    - name: 5. Configure Ollama service
+      blockinfile:
+        path: "/etc/systemd/system/ollama.service"
+        block: |
+          Environment="OLLAMA_HOST=0.0.0.0"
+          Environment="OLLAMA_ORIGINS=*"
+          Environment="OLLAMA_MODELS={{ ollama.models.directory }}"
+          Environment="CUDA_VISIBLE_DEVICES={{ ollama.service.environment.cuda_visible_devices }}"
+          Environment="PATH={{ ollama.service.environment.cuda_path }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          Environment="LD_LIBRARY_PATH={{ ollama.service.environment.cuda_path }}/lib64"
+        marker: "# {mark} ANSIBLE MANAGED OLLAMA ENVIRONMENT"
+        insertafter: "\\[Service\\]"
+        backup: yes
+      notify: restart_ollama
+
+    - name: 6. Ensure model directory exists
+      file:
+        path: "{{ ollama.models.directory }}"
+        state: directory
+        owner: ollama
+        group: ollama
+        mode: '0755'
+
+    - name: 7. Start and enable Ollama
+      systemd:
+        name: ollama
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: 8. Wait for Ollama API
+      wait_for:
+        port: 11434
+        host: 0.0.0.0
+        delay: 5
+        timeout: 60
+
+    - name: 9. Verify Ollama API status
+      uri:
+        url: "http://{{ ansible_default_ipv4.address }}:11434/api/tags"
+        method: GET
+        timeout: 10
+      register: ollama_api_test
+      retries: 3
+      delay: 5
+
+    - name: 10. Pull instruct models
+      shell: "ollama pull {{ item.name }}:{{ item.tag }}"
+      loop: "{{ server_specific_models }}"
+      register: model_pulls
+      become_user: root
+      environment:
+        OLLAMA_HOST: "http://localhost:11434"
+
+    - name: 11. Activate conda and install llama-stack
+      shell: . {{ miniconda_path }}/bin/activate {{ llm_env_name }} && pip install llama-stack
+      args:
+        executable: /bin/bash
+      become_user: agent0
+
+    - name: 12. Download additional instruct model
+      expect:
+        command: . {{ miniconda_path }}/bin/activate {{ llm_env_name }} && llama model download --source meta --model-id {{ additional_model_id }}
+        responses:
+          "Enter the custom URL:": "{{ additional_model_url }}"
+        timeout: 300
+      become_user: agent0
+
+    - name: 13. Configure firewall
+      ufw:
+        rule: allow
+        port: 11434
+        from_ip: 192.168.10.0/24
+        comment: "Ollama API - Internal only"
+      notify: reload_ufw
+
+    - name: 14. Generate deployment summary
+      set_fact:
+        llm02_deployment:
+          server: "{{ inventory_hostname }}"
+          ip_address: "{{ ansible_default_ipv4.address }}"
+          service_status: "{{ 'RUNNING' if ollama_api_test.status == 200 else 'FAILED' }}"
+          api_endpoint: "http://{{ ansible_default_ipv4.address }}:11434"
+          installed_models: "{{ server_specific_models | length + 1 }}"
+          deployment_time: "{{ ansible_date_time.iso8601 }}"
+
+    - name: 15. Display summary
+      debug:
+        msg:
+          - "============================================================="
+          - " LLM SERVER 02 DEPLOYMENT COMPLETE"
+          - " Server: {{ inventory_hostname }} ({{ ansible_default_ipv4.address }})"
+          - "============================================================="
+          - "🚀 OLLAMA SERVICE:"
+          - "  Status: {{ 'RUNNING' if ollama_api_test.status == 200 else 'FAILED' }}"
+          - "  API Endpoint: http://{{ ansible_default_ipv4.address }}:11434"
+          - "  GPU Acceleration: ENABLED"
+          - ""
+          - "🤖 INSTRUCT MODELS DEPLOYED:"
+          - "{% for model in server_specific_models %}"
+          - "  ✅ {{ model.name }}:{{ model.tag }}"
+          - "{% endfor %}"
+          - "  ✅ Llama4-Maverick-Instruct (additional)"
+          - ""
+          - "🎯 STATUS: {{ 'SUCCESS' if ollama_api_test.status == 200 else 'ATTENTION' }}"
+          - "============================================================="
+
+  handlers:
+    - name: restart_ollama
+      systemd:
+        name: ollama
+        state: restarted
+        daemon_reload: yes
+
+    - name: reload_ufw
+      ufw:
+        state: reloaded

@@ -1,0 +1,8 @@
+---
+prometheus_version: "2.53.1"
+prometheus_user: prometheus
+prometheus_group: prometheus
+prometheus_config_dir: /etc/prometheus
+prometheus_data_dir: /var/lib/prometheus
+prometheus_binary_dir: /usr/local/bin
+prometheus_listen_port: 9090

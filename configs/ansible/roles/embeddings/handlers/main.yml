@@ -1,0 +1,12 @@
+---
+# Handlers for embeddings role
+
+- name: restart_ollama
+  systemd:
+    name: ollama
+    state: restarted
+    daemon_reload: yes
+
+- name: reload_ufw
+  ufw:
+    state: reloaded

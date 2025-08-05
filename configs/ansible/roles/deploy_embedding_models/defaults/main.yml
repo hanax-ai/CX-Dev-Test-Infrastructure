@@ -20,7 +20,7 @@ ollama_user: "agent0"
 model_storage_path: "/usr/share/ollama/.ollama/models"
 
 # Target server configuration
-embedding_host: "hx-orc-server"  # Default orchestration server hostname
+embedding_host: "cx-orchestration"  # Default orchestration server hostname
 
 # Deployment configuration
 deployment_log_file: "/var/log/cx-embedding-deployment.log"

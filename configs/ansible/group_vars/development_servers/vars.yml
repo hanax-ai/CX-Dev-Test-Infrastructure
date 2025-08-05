@@ -1,0 +1,29 @@
+---
+# Development Servers Configuration
+# Group: development_servers
+# Servers: hx-dev-server
+
+# Development Environment
+python_version: "3.11"
+nodejs_version: "20"
+code_server_enabled: true
+code_server_port: 8443
+
+# Development Tools
+git_enabled: true
+docker_enabled: true
+kubernetes_enabled: false
+
+# Service Management
+development_services:
+  - testing
+  - development
+  - monitoring
+
+# Security Configuration
+dev_ssl_enabled: false
+dev_auth_required: false
+
+# Monitoring
+monitoring_enabled: true
+dev_metrics_enabled: true

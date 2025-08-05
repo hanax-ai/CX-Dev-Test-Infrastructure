@@ -1,4 +1,4 @@
-# CX R&D Infrastructure Server Configuration
+# HX R&D Infrastructure Server Configuration
 # Server: ${server_name}
 # Role: ${role}
 # Generated: ${timestamp()}
@@ -11,7 +11,7 @@ port = ${port}
 url = "http://${ip_address}:${port}"
 
 [deployment]
-environment = "cx_rnd_infrastructure"
+environment = "hx_rnd_infrastructure"
 project = "Citadel AI Operating System"
 managed_by = "terraform"
 

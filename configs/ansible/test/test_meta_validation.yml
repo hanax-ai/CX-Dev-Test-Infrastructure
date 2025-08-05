@@ -1,0 +1,11 @@
+---
+- name: Test deploy_embedding_models meta syntax
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Include embedding models role
+      include_role:
+        name: deploy_embedding_models
+      vars:
+        test_endpoints: false
+        verify_installations: false

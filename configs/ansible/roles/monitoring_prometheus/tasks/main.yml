@@ -1,0 +1,106 @@
+---
+- name: Create prometheus system group
+  group:
+    name: "{{ prometheus_group }}"
+    system: yes
+
+- name: Create prometheus system user
+  user:
+    name: "{{ prometheus_user }}"
+    group: "{{ prometheus_group }}"
+    system: yes
+    shell: /usr/sbin/nologin
+    home: "{{ prometheus_data_dir }}"
+    create_home: no
+
+- name: Create prometheus directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ prometheus_user }}"
+    group: "{{ prometheus_group }}"
+    mode: '0755'
+  loop:
+    - "{{ prometheus_config_dir }}"
+    - "{{ prometheus_data_dir }}"
+
+- name: Download and extract Prometheus
+  unarchive:
+    src: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    dest: /tmp
+    remote_src: yes
+    creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64"
+
+- name: Copy Prometheus binaries
+  copy:
+    src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+    dest: "{{ prometheus_binary_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: '0755'
+    remote_src: yes
+  loop:
+    - prometheus
+    - promtool
+
+- name: Deploy Prometheus configuration
+  copy:
+    dest: "{{ prometheus_config_dir }}/prometheus.yml"
+    content: |
+      global:
+        scrape_interval: 15s
+        evaluation_interval: 15s
+
+      scrape_configs:
+        - job_name: "node-exporter"
+          static_configs:
+            - targets:
+                - "192.168.10.28:9100"
+                - "192.168.10.29:9100"
+                - "192.168.10.30:9100"
+                - "192.168.10.31:9100"
+                - "192.168.10.33:9100"
+                - "192.168.10.34:9100"
+                - "192.168.10.35:9100"
+                - "192.168.10.36:9100"
+                - "192.168.10.38:9100"
+                - "192.168.10.39:9100"
+
+        - job_name: "citadel-gateway-api"
+          static_configs:
+            - targets: ["192.168.10.39:8000"]
+          labels:
+            component: "api-gateway"
+            environment: "prod"
+
+        - job_name: "prometheus"
+          static_configs:
+            - targets: ["localhost:{{ prometheus_listen_port }}"]
+    owner: "{{ prometheus_user }}"
+    group: "{{ prometheus_group }}"
+    mode: '0644'
+  notify: restart prometheus
+
+- name: Create Prometheus systemd service
+  template:
+    src: prometheus.service.j2
+    dest: /etc/systemd/system/prometheus.service
+    mode: '0644'
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
+- name: Enable and start Prometheus service
+  systemd:
+    name: prometheus
+    enabled: yes
+    state: started
+
+- name: Validate Prometheus is responding
+  uri:
+    url: http://localhost:{{ prometheus_listen_port }}/-/healthy
+    return_content: yes
+  register: prometheus_health
+  failed_when: prometheus_health.status != 200
+  changed_when: false

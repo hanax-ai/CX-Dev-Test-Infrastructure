@@ -1,0 +1,194 @@
+---
+# Playbook: deploy-llm-server-01.yml
+# Description: D    - name: 6. Ensure model directory     - name: 10. Pull chat models
+      shell: "ollama pull {{ item.name }}:{{ item.tag }}"
+      loop: "{{ server_specific_models }}"sts
+      file:
+        path: "{{ ollama.models.directory }}"
+        state: directory
+        owner: ollama
+        group: ollama
+        mode: '0755'hat Models to LLM Server 01 (Phase 4.2)
+# Target: Use canonical inventory groups from main.yaml
+# Usage: ansible-playbook deploy-llm-server-01.yml -l hx-llm-server-01
+
+- name: Deploy LLM Server 01 - Chat Models (Phase 4.2)
+  hosts: llm_servers
+  gather_facts: yes
+  become: yes
+
+  vars:
+    # Override specific models for server-01 (chat models)
+    server_specific_models:
+      - name: "llama3.1"
+        tag: "8b"
+      - name: "qwen2.5"
+        tag: "7b"
+      - name: "mistral"
+        tag: "7b"
+    external_model_id: "Llama3.2-3B-Instruct"
+    external_model_url: "https://llama3-2-lightweight.llamameta.net/*?Policy=...&Download-Request-ID=785333870720711"
+
+  tasks:
+    - name: 1. Validate target server for chat models
+      fail:
+        msg: "This playbook deploys chat models - ensure you're targeting the correct server with -l flag"
+      when: 
+        - inventory_hostname not in groups['llm_servers']
+        - ansible_run_tags is not defined or 'force' not in ansible_run_tags
+
+    - name: 2. Verify CUDA environment
+      shell: bash -c 'source /etc/profile.d/cuda.sh && nvcc --version'
+      register: cuda_verification
+      changed_when: false
+      failed_when: cuda_verification.rc != 0
+
+    - name: 2. Install Ollama
+      shell: curl -fsSL https://ollama.com/install.sh | sh
+      register: ollama_install
+      changed_when: "'Ollama is now installed' in ollama_install.stdout or ollama_install.rc == 0"
+
+    - name: 3. Configure Ollama service (GPU, model dir, remote access)
+      blockinfile:
+        path: "/etc/systemd/system/ollama.service"
+        block: |
+          Environment="OLLAMA_HOST=0.0.0.0"
+          Environment="OLLAMA_ORIGINS=*"
+          Environment="OLLAMA_MODELS={{ ollama.models.directory }}"
+          Environment="CUDA_VISIBLE_DEVICES={{ ollama.service.environment.cuda_visible_devices }}"
+          Environment="PATH={{ ollama.service.environment.cuda_path }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          Environment="LD_LIBRARY_PATH={{ ollama.service.environment.cuda_path }}/lib64"
+        marker: "# {mark} ANSIBLE MANAGED OLLAMA ENVIRONMENT"
+        insertafter: "\\[Service\\]"
+        backup: yes
+      notify: restart_ollama
+
+    - name: 4. Create model directory
+      file:
+        path: "{{ model_dir }}"
+        state: directory
+        owner: ollama
+        group: ollama
+        mode: '0755'
+        recurse: yes
+
+    - name: 5. Start and enable Ollama
+      systemd:
+        name: ollama
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: 6. Wait for Ollama API readiness
+      wait_for:
+        port: "{{ ollama_port }}"
+        host: 0.0.0.0
+        delay: 5
+        timeout: 30
+
+    - name: 7. Test Ollama API
+      uri:
+        url: "http://localhost:{{ ollama_port }}/api/tags"
+        method: GET
+        timeout: 10
+      register: ollama_api_test
+      retries: 3
+      delay: 5
+
+    - name: 8. Pull chat models
+      shell: "ollama pull {{ item.name }}:{{ item.tag }}"
+      loop: "{{ chat_models }}"
+      register: model_pulls
+      become_user: root
+      environment:
+        OLLAMA_HOST: "http://localhost:{{ ollama_port }}"
+      retries: 2
+      delay: 10
+
+    - name: 9. Activate conda + install llama-stack
+      shell: . {{ miniconda_path }}/bin/activate {{ llm_env_name }} && pip install llama-stack
+      args:
+        executable: /bin/bash
+      become_user: agent0
+
+    - name: 10. Download external Meta-hosted model via Llama CLI
+      expect:
+        command: >
+          . {{ miniconda_path }}/bin/activate {{ llm_env_name }} &&
+          llama model download --source meta --model-id {{ external_model_id }}
+        responses:
+          "Enter the custom URL:": "{{ external_model_url }}"
+        timeout: 300
+      become_user: agent0
+      register: external_model_download
+
+    - name: 11. List installed models
+      shell: "ollama list"
+      register: installed_models
+      changed_when: false
+
+    - name: 12. Test chat model response
+      shell: |
+        echo '{"model": "llama3:8b", "prompt": "Hello"}' | \
+        curl -s -X POST http://localhost:{{ ollama_port }}/api/chat -d @-
+      register: chat_test
+      changed_when: false
+      failed_when: false
+
+    - name: 13. Configure firewall
+      ufw:
+        rule: allow
+        port: "{{ ollama_port }}"
+        from_ip: 192.168.10.0/24
+        comment: "Ollama API - Internal only"
+      notify: reload_ufw
+
+    - name: 14. Generate deployment summary
+      set_fact:
+        llm01_deployment:
+          server: "{{ inventory_hostname }}"
+          ip_address: "{{ ansible_default_ipv4.address }}"
+          ollama_version: "{{ ollama_install.stdout | regex_search('version [0-9.]+') | default('Unknown') }}"
+          service_status: "{{ 'RUNNING' if ollama_api_test.status == 200 else 'FAILED' }}"
+          api_endpoint: "http://{{ ansible_default_ipv4.address }}:{{ ollama_port }}"
+          installed_models: "{{ server_specific_models | length + 1 }}"
+          chat_test: "{{ 'SUCCESS' if 'response' in chat_test.stdout else 'FAILED' }}"
+          deployment_time: "{{ ansible_date_time.iso8601 }}"
+          cuda_configured: "{{ cuda_verification.rc == 0 }}"
+
+    - name: 15. Display status
+      debug:
+        msg:
+          - "============================================================="
+          - " LLM SERVER 01 DEPLOYMENT COMPLETE"
+          - " Server: {{ inventory_hostname }} ({{ ansible_default_ipv4.address }})"
+          - "============================================================="
+          - "🚀 OLLAMA SERVICE:"
+          - "  Status: {{ 'RUNNING' if ollama_api_test.status == 200 else 'FAILED' }}"
+          - "  API Endpoint: http://{{ ansible_default_ipv4.address }}:{{ ollama_port }}"
+          - "  GPU Acceleration: {{ 'ENABLED' if cuda_verification.rc == 0 else 'DISABLED' }}"
+          - ""
+          - "🤖 CHAT MODELS DEPLOYED:"
+          - "{% for model in server_specific_models %}  ✅ {{ model.name }}:{{ model.tag }}{% endfor %}"
+          - "  ✅ {{ external_model_id }} (external)"
+          - ""
+          - "🎯 STATUS: {{ 'SUCCESS' if ollama_api_test.status == 200 else 'ATTENTION' }}"
+          - "============================================================="
+
+    - name: 16. Save deployment report (local machine)
+      copy:
+        content: "{{ llm01_deployment | to_nice_json }}"
+        dest: "/tmp/llm01_deployment_{{ ansible_date_time.epoch }}.json"
+      delegate_to: localhost
+      become: false
+
+  handlers:
+    - name: restart_ollama
+      systemd:
+        name: ollama
+        state: restarted
+        daemon_reload: yes
+
+    - name: reload_ufw
+      ufw:
+        state: reloaded

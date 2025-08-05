@@ -1,0 +1,41 @@
+# Exclude backup and documentation directories
+x-Docs/
+X-Archive/
+x-Archive/
+archive/
+*_backup.*
+*.bak
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

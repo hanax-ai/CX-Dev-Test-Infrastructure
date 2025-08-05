@@ -1,6 +1,6 @@
 # CX R&D Infrastructure - Development Dependencies
 # Development and testing requirements
-# Updated: July 31, 2025
+# Updated: July 31, 2025 - Fixed dependency conflicts
 
 # Include production requirements
 -r requirements.txt
@@ -20,8 +20,8 @@ pytest-asyncio==0.23.8
 # Documentation
 sphinx==7.4.7
 sphinx-rtd-theme==2.0.0
-mkdocs==1.6.0
-mkdocs-material==9.5.31
+mkdocs==1.5.3
+mkdocs-material==9.5.18
 
 # Code quality and security
 bandit==1.7.9
@@ -33,12 +33,11 @@ ipython==8.26.0
 jupyter==1.0.0
 jupyterlab==4.2.4
 
-# API testing
-httpie==3.2.3
-postman==0.1.0
+# API testing (compatible version)
+httpx==0.27.0  # Using httpx instead of httpie for better compatibility
 
-# Infrastructure testing
-testinfra==10.1.1
+# Infrastructure Testing
+testinfra==6.0.0
 molecule==24.7.0
 
 # Performance profiling
