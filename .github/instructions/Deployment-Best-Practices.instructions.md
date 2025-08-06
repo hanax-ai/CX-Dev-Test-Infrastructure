@@ -8,17 +8,12 @@ This document outlines the essential guidelines and procedures for deploying and
 
 ## 1. Guiding Principles
 
-### 1.1 Architecture Document as Single Source of Truth
-- **All configurations must align with the official CX R&D Infrastructure Architecture document** (`CX-Documents/CX-RnD-Infrastructure-Architecture.md`)
-- Changes to infrastructure must be documented and approved through the architecture review process
-- Configuration drift from the documented architecture is prohibited
-
-### 1.2 Automation-First Approach
+### 1.1 Automation-First Approach
 - **All infrastructure changes must be implemented via Ansible playbooks**
 - Manual changes on servers are strictly prohibited except for emergency troubleshooting
 - Infrastructure as Code (IaC) principles must be followed consistently
 
-### 1.3 Production Readiness Standard
+### 1.2 Production Readiness Standard
 - **Every component must be deployed as a robust, managed service suitable for production**
 - High availability and fault tolerance must be considered in all deployments
 - All services must include proper monitoring, logging, and alerting
@@ -84,7 +79,7 @@ This document outlines the essential guidelines and procedures for deploying and
 - Log all deployment activities with timestamps and user attribution
 
 ### 4.2 Jenkins Best Practices
-- **Use `dir()` for directory changes**: 
+- **Use `dir()` for directory changes**:
   ```groovy
   dir('ansible') {
       sh 'ansible-playbook playbooks/deploy-service.yml'
@@ -205,3 +200,20 @@ When a service fails, follow this diagnostic procedure on the target server:
 - Maintain complete audit trail of all deployments
 - Log user, timestamp, and change details
 - Preserve deployment logs for compliance requirements
+
+### 10. New Directories and Files
+- Unless the task requires a new directory or file, do not create them.
+- If a new directory or file is required, ensure it is documented in the architecture and follows the naming conventions.
+
+### 11. Questions and Assumptions 
+- For any questions or if you are unsure about a task, ask for help.
+- Do not make assumptions about the task requirements.
+
+### 12. Task Execution
+- Follow the steps outlined in the task description. Do not freelance or deviate from the established steps unless explicitly instructed.
+- If a task requires creating or modifying files, ensure you follow the naming conventions and directory structure.
+- If you discover new tasks are required to complete the task, inform the user and do not proceed with the task until you have confirmation.
+- It is ok to make observations and recommendations, but do not make changes without explicit instructions.
+
+### 13. Sudo Access
+- The sudo password is Major8859!

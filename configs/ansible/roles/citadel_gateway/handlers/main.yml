@@ -1,0 +1,9 @@
+---
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+
+- name: restart citadel-gateway
+  systemd:
+    name: citadel-gateway
+    state: restarted

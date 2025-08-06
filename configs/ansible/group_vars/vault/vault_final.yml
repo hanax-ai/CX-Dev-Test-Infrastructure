@@ -1,6 +1,0 @@
-# Ansible Vault for Citadel AI OS
-postgres_password: "CitadelLLM#2025$SecurePass!"
-vault_postgresql_password: "CitadelLLM#2025$SecurePass!"
-vault_postgresql_web_password: "CitadelLLM#2025$SecurePass!"
-vault_redis_password: "redis_secure_password_2025!"
-redis_password: "redis_secure_password_2025!"

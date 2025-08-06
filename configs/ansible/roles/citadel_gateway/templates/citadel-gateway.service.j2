@@ -1,0 +1,36 @@
+[Unit]
+Description=Citadel AI Gateway
+After=network.target
+Wants=network.target
+
+[Service]
+# Changed to 'simple' as is standard for this type of service
+Type=simple
+User={{ gateway_user }}
+Group={{ gateway_user }}
+WorkingDirectory={{ gateway_home }}
+Environment=PATH={{ gateway_home }}/venv/bin
+EnvironmentFile={{ gateway_config_dir }}/config.env
+
+# Updated to use the Ansible variable for worker count
+ExecStart={{ gateway_home }}/venv/bin/gunicorn -w {{ fastapi_workers }} -k uvicorn.workers.UvicornWorker -b 0.0.0.0:{{ gateway_port }} main:app
+
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=citadel-gateway
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ gateway_home }} {{ log_dir }}
+
+# Resource limits
+MemoryMax=2G
+TasksMax=100
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,52 @@
+---
+# Test Vault Integration Playbook
+# Purpose: Verify that Ansible vault secrets are properly accessible in playbooks
+
+- name: Test Vault Integration
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../group_vars/vault/vault.yml
+  
+  tasks:
+    - name: Test PostgreSQL password access
+      debug:
+        msg: "PostgreSQL password is available: {{ 'YES' if postgres_password is defined else 'NO' }}"
+    
+    - name: Test Redis password access
+      debug:
+        msg: "Redis password is available: {{ 'YES' if redis_password is defined else 'NO' }}"
+    
+    - name: Test Code Server password access
+      debug:
+        msg: "Code Server password is available: {{ 'YES' if code_server_password is defined else 'NO' }}"
+    
+    - name: Verify all required vault variables are defined
+      assert:
+        that:
+          - postgres_password is defined
+          - vault_postgresql_password is defined
+          - vault_postgresql_web_password is defined
+          - redis_password is defined
+          - vault_redis_password is defined
+          - code_server_password is defined
+        success_msg: "✅ All vault variables are properly defined"
+        fail_msg: "❌ Some vault variables are missing"
+    
+    - name: Test password format validation
+      assert:
+        that:
+          - postgres_password | length > 10
+          - redis_password | length > 10
+          - code_server_password | length > 10
+        success_msg: "✅ All passwords meet minimum length requirements"
+        fail_msg: "❌ Some passwords are too short"
+    
+    - name: Summary of vault test
+      debug:
+        msg: |
+          ✅ Vault Integration Test PASSED
+          - All required secrets are accessible
+          - Passwords meet security requirements
+          - Ansible vault decryption is working correctly

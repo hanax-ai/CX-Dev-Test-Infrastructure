@@ -11,23 +11,24 @@
     cors_origins: "*"
     model_map_verbose: false
     log_level: INFO
+    fastapi_workers: 4
 
     ollama_nodes:
       - name: hx-llm-server-01
-        host: 192.168.10.28
+        host: 192.168.10.29
         port: 11434
       - name: hx-llm-server-02
-        host: 192.168.10.29
+        host: 192.168.10.28
         port: 11434
 
     model_mappings:
-      "llama3.2:3b": hx-llm-server-01
-      "llama3:8b": hx-llm-server-01
-      "nous-hermes2:latest": hx-llm-server-01
-      "llama4:16x17b": hx-llm-server-02
-      "mistral:7b": hx-llm-server-02
-      "qwen3:8b": hx-llm-server-02
-      default: hx-llm-server-01
+      "llama3.2:3b": "192.168.10.29:11434"
+      "llama3:8b": "192.168.10.29:11434"
+      "nous-hermes2:latest": "192.168.10.29:11434"
+      "llama4:16x17b": "192.168.10.28:11434"
+      "mistral:7b": "192.168.10.28:11434"
+      "qwen3:8b": "192.168.10.28:11434"
+      default: "192.168.10.28:11434"
 
   roles:
     - citadel_gateway

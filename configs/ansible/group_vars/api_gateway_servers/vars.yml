@@ -1,41 +1,36 @@
----
-# API Gateway Servers Configuration
-# Group: api_gateway_servers
-# Servers: hx-api-gateway-server
+# Definitive Ansible variables for the Citadel Gateway
 
-# FastAPI Configuration
-fastapi_port: 8000
-fastapi_workers: 4
-fastapi_max_requests: 1000
-fastapi_timeout: 30
+# --- Gateway & Nginx Settings ---
+gateway_port: 8000
+log_level: INFO
+cors_origins: "*"
+gateway_user: "agent0"
+gateway_home: "/opt/citadel-gateway"
+log_dir: "/var/log/citadel-gateway"
+model_map_verbose: false
+fastapi_workers: 4          # <-- ADD THIS LINE (use 1 for a single worker, or 4 for multi-core)
 
-# Nginx Configuration
-nginx_port: 80
-nginx_ssl_port: 443
-nginx_worker_processes: "auto"
-nginx_worker_connections: 1024
+# --- Backend Node Definitions ---
+ollama_nodes:
+  - name: hx-llm-server-01
+    host: 192.168.10.29
+    port: 11434
+  - name: hx-llm-server-02
+    host: 192.168.10.28
+    port: 11434
 
-# Load Balancer Configuration
-load_balancer_algorithm: "round_robin"
-upstream_servers:
-  - "127.0.0.1:8000"
+# --- Explicit Model Routing Map ---
+# This map is now 100% aligned with your `ollama list` output.
+model_mappings:
+  # Models on hx-llm-server-01 (192.168.10.29)
+  "llama3.2:3b": "192.168.10.29:11434"
+  "llama3:8b": "192.168.10.29:11434"
 
-# Service Management
-api_gateway_services:
-  - fastapi
-  - nginx
-  - load_balancer
-  - monitoring
+  # Models on hx-llm-server-02 (192.168.10.28)
+  "llama4:16x17b": "192.168.10.28:11434"
+  "mistral:7b": "192.168.10.28:11434"
+  "qwen3:8b": "192.168.10.28:11434"
 
-# SSL/TLS Configuration
-ssl_enabled: true
-ssl_cert_path: "/etc/ssl/certs/citadel-ai.crt"
-ssl_key_path: "/etc/ssl/private/citadel-ai.key"
-
-# Rate Limiting
-rate_limit_enabled: true
-rate_limit_requests_per_minute: 100
-
-# Monitoring
-monitoring_enabled: true
-api_metrics_enabled: true
+  # This model exists on both servers. We'll route it to server 1 by default.
+  # You can change this to .28 if you prefer.
+  "nous-hermes2:latest": "192.168.10.29:11434"

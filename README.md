@@ -6,6 +6,10 @@
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-success)](#-quick-start)
 [![License](https://img.shields.io/badge/License-Enterprise-red)](#-license)
 
+> **⚠️ AUTHORITATIVE IP ADDRESS SOURCE**  
+> This README.md is the **SINGLE SOURCE OF TRUTH** for all IP addresses in the CX R&D Infrastructure.  
+> All Ansible playbooks, configurations, scripts, and documentation must reference IP addresses from this file only.
+
 ## Enterprise-Grade AI Research & Development Infrastructure
 
 The CX (Citadel-X) Dev & Test Infrastructure is a **$2M+ enterprise-grade AI research and development platform** designed for cutting-edge artificial intelligence innovation. This sophisticated ecosystem encompasses **9 specialized servers** delivering unparalleled computational power with **93.1TB total storage capacity**, **470+ GB distributed RAM**, and **120+ CPU cores** optimized for AI workloads.
@@ -59,12 +63,15 @@ This repository provides complete Infrastructure as Code (IaC) capabilities usin
 
 ## 🏗️ Infrastructure Architecture
 
+> **📍 AUTHORITATIVE IP ADDRESS REFERENCE**  
+> This README.md serves as the **single source of truth** for all IP addresses in the CX R&D Infrastructure. All configurations, playbooks, and documentation must reference these addresses.
+
 ### Server Topology
 
 | Server | IP Address | Hardware | Purpose | Storage |
 |--------|------------|----------|---------|---------|
-| **CX-LLM Server 01** | 192.168.10.28 | 2x RTX 5060 Ti, 64GB RAM | Llama 3 Chat Models | 16TB (4TB NVMe + 12TB HDD) |
-| **CX-LLM Server 02** | 192.168.10.29 | 2x RTX 4070 Ti SUPER, 128GB RAM | Llama 3 Instruct Models | 16TB (4TB NVMe + 12TB HDD) |
+| **CX-LLM Server 01** | 192.168.10.29 | 2x RTX 5060 Ti, 128GB RAM | Llama 3 Chat Models | 16TB vRam (4TB NVMe + 12TB HDD) |
+| **CX-LLM Server 02** | 192.168.10.28 | 2x RTX 4070 Ti SUPER, 128GB RAM | Llama 3 Instruct Models | 16TB vRam (4TB NVMe + 12TB HDD) |
 | **CX-Vector Database** | 192.168.10.30 | 78GB RAM | Qdrant Vector Storage | 21.8TB NVMe |
 | **CX-LLM & Orchestration** | 192.168.10.31 | 1x RTX 5060 Ti, 64GB RAM | Embedding Models & Coordination | High-speed NVMe |
 | **CX-Dev Server** | 192.168.10.33 | 8-core Xeon, 125GB RAM | Development Environment | 4.5TB (879GB SSD + 3.6TB HDD) |
@@ -74,6 +81,22 @@ This repository provides complete Infrastructure as Code (IaC) capabilities usin
 | **CX-Metric Server** | 192.168.10.37 | 8-core, 32GB RAM | Monitoring & Analytics | Prometheus & Grafana storage |
 | **CX-Web Server** | 192.168.10.38 | 8-core i7, 15GB RAM | Web Interface | OpenWebUI deployment |
 | **CX-API Gateway** | 192.168.10.39 | 8-core i7 | Load Balancing & Routing | FastAPI deployment |
+
+### Service Port Reference
+
+| Service | Server | IP:Port | Protocol | Purpose |
+|---------|--------|---------|----------|---------|
+| **Ollama API** | CX-LLM Server 01 | 192.168.10.29:11434 | HTTP | Chat Models API |
+| **Ollama API** | CX-LLM Server 02 | 192.168.10.28:11434 | HTTP | Instruct Models API |
+| **Ollama API** | CX-LLM & Orchestration | 192.168.10.31:11434 | HTTP | Embedding Models API |
+| **Qdrant API** | CX-Vector Database | 192.168.10.30:6333 | HTTP | Vector Search API |
+| **PostgreSQL** | CX-Database Server | 192.168.10.35:5432 | TCP | Primary Database |
+| **Redis** | CX-Database Server | 192.168.10.35:6379 | TCP | Cache & Message Bus |
+| **FastAPI Gateway** | CX-API Gateway | 192.168.10.39:8000 | HTTP | Unified AI API |
+| **OpenWebUI** | CX-Web Server | 192.168.10.38:3000 | HTTP | Web Interface |
+| **Prometheus** | CX-Metric Server | 192.168.10.37:9090 | HTTP | Metrics Collection |
+| **Grafana** | CX-Metric Server | 192.168.10.37:3000 | HTTP | Metrics Visualization |
+| **AlertManager** | CX-Metric Server | 192.168.10.37:9093 | HTTP | Alert Management |
 
 ### Network Architecture
 
@@ -174,42 +197,68 @@ pip install -r requirements-dev.txt # Development dependencies
 
 ```text
 /opt/CX-Dev-Test-Infrastructure/
-├── .github/
-│   └── instructions/              # GitHub automation and instructions
-├── configs/
-│   ├── ansible/
-│   │   ├── inventory/
-│   │   │   ├── hosts              # Primary server inventory
-│   │   │   ├── hosts.yml          # YAML-based server inventory
-│   │   │   └── monitoring-inventory.yaml  # Monitoring-specific inventory
-│   │   ├── roles/                 # Ansible roles for service deployment
-│   │   ├── playbooks/             # Deployment playbooks
-│   │   └── deploy-*.yml           # Service-specific deployment playbooks
-│   ├── terraform/
-│   │   ├── main.tf                # Infrastructure definitions
-│   │   ├── templates/             # Dynamic configuration templates
-│   │   └── server-configs/        # Generated server configurations
-│   └── jenkins/
-│       ├── Jenkinsfile            # Declarative CI/CD pipeline
-│       └── pipeline-config.yml    # Pipeline configuration
-├── scripts/                       # All deployment and utility scripts
-│   ├── install-*.sh               # Installation scripts for DevOps tools
-│   ├── deploy-*.sh                # Deployment automation scripts
-│   ├── check_*.sh                 # Server validation scripts
-│   ├── test_*.py                  # Testing and validation utilities
-│   └── health-check.sh            # Infrastructure health monitoring
-├── CX-Documents/                  # Official project documentation
-│   ├── CX-RnD-Infrastructure-Architecture.md  # Primary architecture doc
-│   ├── CX-*-Configuration.md      # Server-specific configuration guides
-│   └── CX-Status/                 # Server status documentation
-├── x-Docs/                        # Additional documentation and analysis
-├── x-Archive/                     # Deprecated and archived materials
-├── logs/                          # Deployment and operational logs
-├── requirements*.txt              # Python dependencies
-└── README.md                      # This file - primary project overview
-```
-
+.
+├── ansible
+│   ├── ansible.cfg
+│   └── inventory
+│       └── hosts.yml
+├── configs
+│   ├── ansible
+│   │   ├── ansible.cfg
+│   │   ├── deploy
+│   │   ├── documentation
+│   │   ├── files
+│   │   ├── fix
+│   │   ├── group_vars
+│   │   ├── inventory
+│   │   ├── operations
+│   │   ├── roles
+│   │   ├── setup
+│   │   ├── site.yml
+│   │   ├── templates
+│   │   └── test
+│   ├── jenkins
+│   │   ├── Jenkinsfile
+│   │   └── pipeline-config.yml
+│   └── terraform
+│       ├── main.tf
+│       ├── server-configs
+│       └── templates
+├── logs
+│   └── phase3-deployment.log
+├── README.md
+├── requirements-dev-minimal.txt
+├── requirements-dev.txt
+├── requirements.txt
+├── scripts
+│   ├── azure-devops-manual-setup.md
+│   ├── check_phase5_servers_headless.sh
+│   ├── check_phase5_servers.sh
+│   ├── collect_gateway_info.py
+│   ├── deploy_all_ssh_keys.sh
+│   ├── deploy_ed25519_key_fixed.sh
+│   ├── deploy_ed25519_key.sh
+│   ├── deploy-phase3.sh
+│   ├── deploy-phase5.sh
+│   ├── deploy_ssh_keys.sh
+│   ├── diagnose_web_ui_server_paramiko.py
+│   ├── fix_group_vars.sh
+│   ├── health-check.sh
+│   ├── install-ansible.sh
+│   ├── install-azure-devops-agent.sh
+│   ├── install-jenkins.sh
+│   ├── install-terraform.sh
+│   ├── quick_web_test.py
+│   ├── test_api_gateway.py
+│   ├── test_openai_proxy.sh
+│   ├── test_postgres_connection.py
+│   ├── test_qdrant_remote.sh
+│   ├── test_vault_integration.sh
+│   ├── test_web_ui_server.py
+│   └── validate-preflight-checks.sh
 ### Ansible Configuration
+
+> **🎯 NOTE:** All Ansible playbooks and configurations must use the IP addresses specified in this README.md as the authoritative source.
 
 **9-Server Infrastructure Management:**
 
@@ -225,15 +274,17 @@ cx_infrastructure:
 ```
 
 **Managed Servers:**
-- **CX-Web** (192.168.10.28) - Web Server
-- **CX-API Gateway** (192.168.10.29) - API Gateway
-- **CX-Database** (192.168.10.30) - Database Server
-- **CX-Vector Database** (192.168.10.31) - Vector Database
-- **CX-LLM Orchestration** (192.168.10.32) - LLM/Orchestration
-- **CX-Test** (192.168.10.33) - Test Server
-- **CX-Metric** (192.168.10.34) - Metrics Server
-- **CX-Dev** (192.168.10.35) - Development Server
-- **CX-DevOps** (192.168.10.36) - DevOps Server
+- **CX-LLM Server 01** (192.168.10.29) - Llama 3 Chat Models
+- **CX-LLM Server 02** (192.168.10.28) - Llama 3 Instruct Models
+- **CX-Vector Database** (192.168.10.30) - Qdrant Vector Storage
+- **CX-LLM & Orchestration** (192.168.10.31) - Embedding Models & Coordination
+- **CX-Dev Server** (192.168.10.33) - Development Environment
+- **CX-Test Server** (192.168.10.34) - Testing & Validation
+- **CX-Database Server** (192.168.10.35) - PostgreSQL & Redis
+- **CX-DevOps Server** (192.168.10.36) - CI/CD & Automation
+- **CX-Metric Server** (192.168.10.37) - Monitoring & Analytics
+- **CX-Web Server** (192.168.10.38) - Web Interface
+- **CX-API Gateway** (192.168.10.39) - Load Balancing & Routing
 
 ### Terraform Infrastructure as Code
 
@@ -431,8 +482,8 @@ git push origin main
 
 #### AI Model APIs
 
-- **Llama 3 Chat:** `http://192.168.10.28:8000/v1/chat/completions`
-- **Llama 3 Instruct:** `http://192.168.10.29:8000/v1/completions`
+- **Llama 3 Chat:** `http://192.168.10.29:11434/api/chat`
+- **Llama 3 Instruct:** `http://192.168.10.28:11434/api/chat`
 - **Embedding Service:** `http://192.168.10.31:11434/api/embeddings`
 
 #### Data APIs
@@ -694,3 +745,4 @@ This infrastructure and associated documentation are proprietary to Citadel AI. 
 ---
 
 *This README provides the primary infrastructure overview. For comprehensive technical documentation, detailed configuration guides, and operational procedures, explore the **[CX-Documents](CX-Documents/)** directory.*
+

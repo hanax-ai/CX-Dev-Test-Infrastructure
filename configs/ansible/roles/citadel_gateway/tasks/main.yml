@@ -1,0 +1,95 @@
+---
+- name: Create gateway user
+  user:
+    name: "{{ gateway_user }}"
+    home: "{{ gateway_home }}"
+    shell: /bin/bash
+    system: yes
+    create_home: yes
+
+- name: Create configuration directory
+  file:
+    path: "{{ gateway_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ gateway_user }}"
+    mode: '0750'
+
+- name: Create log directory
+  file:
+    path: "{{ log_dir }}"
+    state: directory
+    owner: "{{ gateway_user }}"
+    group: "{{ gateway_user }}"
+    mode: '0755'
+
+- name: Install Python dependencies
+  package:
+    name:
+      - python3
+      - python3-pip
+      - python3-venv
+    state: present
+
+- name: Create Python virtual environment
+  command: python3 -m venv {{ gateway_home }}/venv
+  args:
+    creates: "{{ gateway_home }}/venv"
+  become_user: "{{ gateway_user }}"
+
+- name: Install gateway dependencies
+  pip:
+    name:
+      - fastapi==0.104.1
+      - uvicorn[standard]==0.24.0
+      - httpx==0.25.2
+      - pydantic-settings==2.0.3
+      - gunicorn==21.2.0
+    virtualenv: "{{ gateway_home }}/venv"
+  become_user: "{{ gateway_user }}"
+
+- name: Copy gateway application files
+  copy:
+    src: "{{ item }}"
+    dest: "{{ gateway_home }}/{{ item | basename }}"
+    owner: "{{ gateway_user }}"
+    group: "{{ gateway_user }}"
+    mode: '0644'
+  loop:
+    - "{{ playbook_dir }}/gateway_app/main.py"
+    - "{{ playbook_dir }}/gateway_app/config.py"
+  notify: restart citadel-gateway
+
+- name: Copy environment config
+  template:
+    src: config.env.j2
+    dest: "{{ gateway_config_dir }}/config.env"
+    owner: root
+    group: "{{ gateway_user }}"
+    mode: '0640'
+  notify: restart citadel-gateway
+
+- name: Copy systemd service
+  template:
+    src: citadel-gateway.service.j2
+    dest: /etc/systemd/system/citadel-gateway.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart citadel-gateway
+
+- name: Allow firewall port for gateway
+  ufw:
+    rule: allow
+    port: "{{ gateway_port }}"
+    src: "{{ trusted_subnet | default('192.168.10.0/24') }}"
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Enable and start service
+  systemd:
+    name: citadel-gateway
+    enabled: yes
+    state: started
+    daemon_reload: yes
