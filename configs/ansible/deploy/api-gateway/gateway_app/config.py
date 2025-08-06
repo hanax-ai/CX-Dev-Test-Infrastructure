@@ -1,47 +1,50 @@
 # config.py
+import os
 import yaml
 import logging
-from typing import Dict, Tuple, Optional
+from typing import Dict, List, Optional
 
+# Set up a logger for this module
 logger = logging.getLogger(__name__)
 
 class GatewayConfig:
-    def __init__(self, config_file: str = "config.yaml"):
-        self.config_file = config_file
-        self._model_map = {}
-        self._load_config()
+    """
+    A centralized class to load and manage gateway configuration from a YAML file.
+    """
+    def __init__(self, config_path="config.yaml"):
+        self.model_map = {}
+        self.backend_hosts = []
 
-    def _load_config(self):
-        """Load configuration from YAML file."""
         try:
-            with open(self.config_file, "r") as f:
+            with open(config_path, "r") as f:
                 config = yaml.safe_load(f)
-                self._model_map = config.get("model_map", {})
-            
-            if not self._model_map:
-                logger.warning(f"model_map in {self.config_file} is empty or not found.")
-            else:
-                logger.info(f"Loaded {len(self._model_map)} model mappings from {self.config_file}")
                 
+                # Load the model map directly from the yaml file
+                self.model_map = config.get("model_map", {})
+                logger.info(f"Successfully loaded {len(self.model_map)} model mappings from {config_path}")
+
+                # Automatically derive the list of unique backend hosts from the model map values
+                if self.model_map:
+                    self.backend_hosts = sorted(list(set(self.model_map.values())))
+                    logger.info(f"Discovered {len(self.backend_hosts)} unique backend hosts.")
+
+            if not self.model_map:
+                logger.warning(f"model_map in {config_path} is empty or not found.")
+
         except FileNotFoundError:
-            logger.error(f"CRITICAL: {self.config_file} not found. Gateway will not be able to route models.")
-        except yaml.YAMLError as e:
-            logger.error(f"CRITICAL: Invalid YAML in {self.config_file}: {e}")
+            logger.error(f"CRITICAL: Configuration file not found at '{config_path}'.")
         except Exception as e:
-            logger.error(f"CRITICAL: Error loading {self.config_file}: {e}")
+            logger.error(f"CRITICAL: Error loading or parsing {config_path}: {e}")
 
-    def get_model_mapping(self) -> Tuple[Dict[str, str], Optional[str]]:
-        """
-        Returns the model mapping and any default backend.
-        
-        Returns:
-            Tuple of (model_map, default_backend)
-            model_map: Dict mapping model names to backend hosts
-            default_backend: None (we only use explicit mappings)
-        """
-        return self._model_map, None
+    def get_model_mapping(self) -> Dict[str, str]:
+        """Returns the loaded model-to-host map."""
+        return self.model_map
 
-    def reload_config(self):
+    def get_backend_hosts(self) -> List[str]:
+        """Returns the list of unique backend hosts derived from the model map."""
+        return self.backend_hosts
+
+    def reload_config(self, config_path="config.yaml"):
         """Reload configuration from file."""
-        logger.info(f"Reloading configuration from {self.config_file}")
-        self._load_config()
+        logger.info(f"Reloading configuration from {config_path}")
+        self.__init__(config_path)

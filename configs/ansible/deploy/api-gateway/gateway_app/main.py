@@ -15,7 +15,7 @@ from config import GatewayConfig
 # === Initialize Configuration ===
 config = GatewayConfig()
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-MODEL_MAP, _ = config.get_model_mapping() # We only need the explicit map
+MODEL_MAP = config.get_model_mapping()  # Simplified interface
 
 # === Logging ===
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s [%(levelname)s] %(message)s")

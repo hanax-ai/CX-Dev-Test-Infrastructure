@@ -1,5 +1,2 @@
-fastapi
-uvicorn[standard]
-httpx
-pydantic
-PyYAML
+# Reference the main requirements file to avoid duplication
+-r ../requirements.txt
