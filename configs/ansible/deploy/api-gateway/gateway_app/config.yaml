@@ -1,0 +1,15 @@
+# /opt/citadel-gateway/config.yaml
+# Single source of truth for model routing configuration
+
+model_map:
+  # Models on hx-llm-server-01 (192.168.10.29)
+  "llama3.2:3b": "192.168.10.29:11434"
+  "llama3:8b": "192.168.10.29:11434"
+
+  # Models on hx-llm-server-02 (192.168.10.28)
+  "llama4:16x17b": "192.168.10.28:11434"
+  "mistral:7b": "192.168.10.28:11434"
+  "qwen3:8b": "192.168.10.28:11434"
+
+  # This model exists on both, we'll route it to server 1
+  "nous-hermes2:latest": "192.168.10.29:11434"

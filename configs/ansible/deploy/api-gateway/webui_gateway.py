@@ -1,5 +1,6 @@
 import httpx
 import logging
+import yaml  # <-- Import the YAML library
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -7,23 +8,20 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
 # ===================================================================
-# --- Configuration: The Only Part You Need to Edit ---
+# --- Configuration Loader ---
 # ===================================================================
-# This dictionary is the single source of truth.
-# Map your model names to the full IP:PORT of the backend server.
-MODEL_MAP = {
-    # Models on hx-llm-server-01 (192.168.10.29)
-    "llama3.2:3b": "192.168.10.29:11434",
-    "llama3:8b": "192.168.10.29:11434",
+MODEL_MAP = {}  # Start with an empty map
 
-    # Models on hx-llm-server-02 (192.168.10.28)
-    "llama4:16x17b": "192.168.10.28:11434",
-    "mistral:7b": "192.168.10.28:11434",
-    "qwen3:8b": "192.168.10.28:11434",
-    
-    # This model exists on both, we'll route to server 1
-    "nous-hermes2:latest": "192.168.10.29:11434"
-}
+try:
+    with open("config.yaml", "r") as f:
+        config = yaml.safe_load(f)
+        MODEL_MAP = config.get("model_map", {})
+    if not MODEL_MAP:
+        logging.warning("model_map in config.yaml is empty or not found.")
+except FileNotFoundError:
+    logging.error("CRITICAL: config.yaml not found. The gateway will not be able to route models.")
+except Exception as e:
+    logging.error(f"CRITICAL: Error loading config.yaml: {e}")
 # ===================================================================
 
 # --- Logging Setup ---

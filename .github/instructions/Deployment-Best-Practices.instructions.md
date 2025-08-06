@@ -216,4 +216,6 @@ When a service fails, follow this diagnostic procedure on the target server:
 - It is ok to make observations and recommendations, but do not make changes without explicit instructions.
 
 ### 13. Sudo Access
-- The sudo password is Major8859!
+- Sudo access credentials must be managed through secure credential stores
+- Contact system administrators for sudo access procedures
+- Never store passwords in documentation or version control

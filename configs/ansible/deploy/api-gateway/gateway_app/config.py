@@ -1,37 +1,47 @@
 # config.py
-import os
-from pydantic_settings import BaseSettings
+import yaml
+import logging
+from typing import Dict, Tuple, Optional
 
-class GatewayConfig(BaseSettings):
-    """Loads and manages configuration from environment variables."""
+logger = logging.getLogger(__name__)
 
-    def get_backend_hosts(self) -> list[str]:
-        """Dynamically loads all configured OLLAMA_NODE_* hosts."""
-        hosts = []
-        index = 1
-        while True:
-            host = os.getenv(f"OLLAMA_NODE_{index}_HOST")
-            port = os.getenv(f"OLLAMA_NODE_{index}_PORT")
-            if not host or not port:
-                break
-            hosts.append(f"{host}:{port}")
-            index += 1
-        return hosts
+class GatewayConfig:
+    def __init__(self, config_file: str = "config.yaml"):
+        self.config_file = config_file
+        self._model_map = {}
+        self._load_config()
 
-    def get_model_mapping(self) -> tuple[dict, str]:
+    def _load_config(self):
+        """Load configuration from YAML file."""
+        try:
+            with open(self.config_file, "r") as f:
+                config = yaml.safe_load(f)
+                self._model_map = config.get("model_map", {})
+            
+            if not self._model_map:
+                logger.warning(f"model_map in {self.config_file} is empty or not found.")
+            else:
+                logger.info(f"Loaded {len(self._model_map)} model mappings from {self.config_file}")
+                
+        except FileNotFoundError:
+            logger.error(f"CRITICAL: {self.config_file} not found. Gateway will not be able to route models.")
+        except yaml.YAMLError as e:
+            logger.error(f"CRITICAL: Invalid YAML in {self.config_file}: {e}")
+        except Exception as e:
+            logger.error(f"CRITICAL: Error loading {self.config_file}: {e}")
+
+    def get_model_mapping(self) -> Tuple[Dict[str, str], Optional[str]]:
         """
-        Extracts the explicit model-to-host mappings from environment variables.
-        e.g., MODEL_ID_LLAMA3_8B=llama3:8b and MODEL_MAP_LLAMA3_8B=192.168.10.29:11434
-        will result in the map {'llama3:8b': '192.168.10.29:11434'}.
-        """
-        model_map = {}
-        for key, value in os.environ.items():
-            if key.startswith("MODEL_MAP_") and key != "MODEL_MAP_DEFAULT":
-                # Find the corresponding MODEL_ID_* variable
-                id_key = key.replace("MODEL_MAP_", "MODEL_ID_")
-                original_model_id = os.getenv(id_key)
-                if original_model_id:
-                    model_map[original_model_id] = value
+        Returns the model mapping and any default backend.
         
-        default_backend = os.getenv("MODEL_MAP_DEFAULT", "")
-        return model_map, default_backend
+        Returns:
+            Tuple of (model_map, default_backend)
+            model_map: Dict mapping model names to backend hosts
+            default_backend: None (we only use explicit mappings)
+        """
+        return self._model_map, None
+
+    def reload_config(self):
+        """Reload configuration from file."""
+        logger.info(f"Reloading configuration from {self.config_file}")
+        self._load_config()
