@@ -1,0 +1,12 @@
+{{ gateway_log_dir }}/*.log {
+    daily
+    missingok
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    create 0644 {{ gateway_user }} {{ gateway_user }}
+    postrotate
+        systemctl reload {{ gateway_service_name }} > /dev/null 2>&1 || true
+    endscript
+}

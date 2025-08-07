@@ -1,0 +1,7 @@
+---
+- name: Upload Node Exporter Full dashboard from Grafana.com
+  community.grafana.grafana_dashboard:
+    grafana_url: "http://192.168.10.37:3000"
+    grafana_api_key: "{{ grafana_admin_api_key }}"
+    dashboard_url: "https://grafana.com/api/dashboards/1860/revisions/25/download"
+    overwrite: true

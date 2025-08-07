@@ -1,0 +1,34 @@
+[Unit]
+Description=Citadel WebUI Gateway Service
+Documentation=https://github.com/hanax-ai/CX-Dev-Test-Infrastructure
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ gateway_user }}
+Group={{ gateway_user }}
+WorkingDirectory={{ gateway_home }}
+Environment=PATH={{ python_env_path }}/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONPATH={{ gateway_home }}
+ExecStart={{ python_env_path }}/bin/uvicorn webui_gateway:app --host 0.0.0.0 --port {{ gateway_port }} --workers {{ uvicorn_workers }} --timeout-keep-alive {{ uvicorn_timeout }}
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths={{ gateway_home }} {{ gateway_log_dir }}
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=webui-gateway
+
+[Install]
+WantedBy=multi-user.target

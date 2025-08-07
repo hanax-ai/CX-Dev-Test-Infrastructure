@@ -1,0 +1,263 @@
+---
+# Citadel Infrastructure Deployment – WebUI Gateway Server
+# Component: WebUI Gateway (FastAPI + uvicorn + systemd)
+# Path: /opt/CX-Dev-Test-Infrastructure/configs/ansible/deploy/api-gateway/deploy-webui-gateway.yml
+# Target Host: hx-api-gateway-server (192.168.10.39)
+# Service: webui-gateway.service
+# Port: 8001 (internal)
+# Dependencies: hx-llm-server-01 (.29), hx-llm-server-02 (.28)
+
+- name: Deploy WebUI Gateway Server
+  hosts: api_gateway_servers
+  become: yes
+  gather_facts: yes
+
+  vars:
+    # --- Service Configuration ---
+    gateway_user: agent0
+    gateway_home: /opt/citadel-gateway
+    gateway_config_dir: "{{ gateway_home }}/gateway_app"
+    gateway_port: 8001
+    gateway_log_dir: /var/log/webui-gateway
+    gateway_service_name: webui-gateway
+    python_env_path: "{{ gateway_home }}/venv"
+    
+    # --- Application Configuration ---
+    cors_origins: "*"
+    log_level: INFO
+    uvicorn_workers: 2
+    uvicorn_timeout: 300
+
+    # --- Model Backend Configuration ---
+    llm_backends:
+      - name: hx-llm-server-01
+        host: 192.168.10.29
+        port: 11434
+        models:
+          - "llama3.2:3b"
+          - "llama3:8b"
+          - "nous-hermes2:latest"
+      - name: hx-llm-server-02
+        host: 192.168.10.28
+        port: 11434
+        models:
+          - "llama4:16x17b"
+          - "mistral:7b"
+          - "qwen3:8b"
+
+  pre_tasks:
+    - name: Wait for API Gateway Server to become reachable
+      wait_for_connection:
+        timeout: 60
+
+    - name: Create gateway system user
+      user:
+        name: "{{ gateway_user }}"
+        home: "{{ gateway_home }}"
+        shell: /bin/bash
+        system: yes
+        create_home: yes
+      when: gateway_user != "agent0"
+
+    - name: Create required directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ gateway_user }}"
+        group: "{{ gateway_user }}"
+        mode: '0755'
+      loop:
+        - "{{ gateway_home }}"
+        - "{{ gateway_config_dir }}"
+        - "{{ gateway_log_dir }}"
+        - "{{ gateway_home }}/gateway_app"
+
+  tasks:
+    # --- Pre-deployment Validation ---
+    - name: Verify source files exist
+      stat:
+        path: "{{ item }}"
+      loop:
+        - "webui_gateway.py"
+        - "requirements.txt"
+        - "gateway_app/"
+      register: source_files
+      delegate_to: localhost
+      become: no
+
+    - name: Fail if source files missing
+      fail:
+        msg: "Missing source file: {{ item.item }}"
+      when: not item.stat.exists
+      loop: "{{ source_files.results }}"
+
+    - name: Verify virtual environment exists
+      stat:
+        path: "{{ python_env_path }}/bin/python"
+      register: venv_check
+
+    - name: Fail if virtual environment missing
+      fail:
+        msg: "Virtual environment not found at {{ python_env_path }}"
+      when: not venv_check.stat.exists
+
+    - name: Verify service exists
+      systemd:
+        name: "{{ gateway_service_name }}"
+      register: service_check
+      failed_when: false
+
+    - name: Fail if service not found
+      fail:
+        msg: "Service {{ gateway_service_name }} not found"
+      when: service_check.status is not defined
+
+    # --- Stop service before updating ---
+    - name: Stop WebUI gateway service
+      systemd:
+        name: "{{ gateway_service_name }}"
+        state: stopped
+      register: service_stopped
+
+    - name: Create backup directory
+      file:
+        path: "{{ gateway_home }}/backup/{{ ansible_date_time.epoch }}"
+        state: directory
+        owner: "{{ gateway_user }}"
+        group: "{{ gateway_user }}"
+        mode: '0755'
+      register: backup_dir
+
+    - name: Backup current files
+      copy:
+        src: "{{ gateway_home }}/{{ item }}"
+        dest: "{{ backup_dir.path }}/{{ item }}"
+        remote_src: yes
+        owner: "{{ gateway_user }}"
+        group: "{{ gateway_user }}"
+      loop:
+        - "webui_gateway.py"
+        - "requirements.txt"
+      ignore_errors: yes
+
+    # --- Application Files Deployment ---
+    - name: Copy updated WebUI gateway application
+      copy:
+        src: "webui_gateway.py"
+        dest: "{{ gateway_home }}/webui_gateway.py"
+        owner: "{{ gateway_user }}"
+        group: "{{ gateway_user }}"
+        mode: '0644'
+        backup: yes
+
+    - name: Copy updated requirements file
+      copy:
+        src: "requirements.txt"
+        dest: "{{ gateway_home }}/requirements.txt"
+        owner: "{{ gateway_user }}"
+        group: "{{ gateway_user }}"
+        mode: '0644'
+        backup: yes
+
+    - name: Remove old gateway_app directory
+      file:
+        path: "{{ gateway_home }}/gateway_app"
+        state: absent
+
+    - name: Copy updated gateway_app directory
+      copy:
+        src: "gateway_app/"
+        dest: "{{ gateway_home }}/gateway_app/"
+        owner: "{{ gateway_user }}"
+        group: "{{ gateway_user }}"
+        directory_mode: '0755'
+        mode: '0644'
+
+    # --- Update Python dependencies ---
+    - name: Install/update Python dependencies
+      pip:
+        requirements: "{{ gateway_home }}/requirements.txt"
+        virtualenv: "{{ python_env_path }}"
+      become_user: "{{ gateway_user }}"
+
+    # --- Reload systemd configuration ---
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    # --- Start service ---
+    - name: Start WebUI gateway service
+      systemd:
+        name: "{{ gateway_service_name }}"
+        state: started
+        enabled: yes
+      register: service_start
+      
+    - name: Wait for service to stabilize
+      pause:
+        seconds: 5
+
+  post_tasks:
+    # --- Service Validation ---
+    - name: Check service is actually running
+      systemd:
+        name: "{{ gateway_service_name }}"
+      register: final_service_check
+      
+    - name: Fail if service not running
+      fail:
+        msg: "Service {{ gateway_service_name }} failed to start"
+      when: final_service_check.status.ActiveState != "active"
+
+    - name: Wait for WebUI gateway port to be available
+      wait_for:
+        port: "{{ gateway_port }}"
+        host: "{{ ansible_default_ipv4.address }}"
+        timeout: 30
+      register: port_check
+
+    - name: Test WebUI gateway health endpoint
+      uri:
+        url: "http://{{ ansible_default_ipv4.address }}:{{ gateway_port }}/api/tags"
+        method: GET
+        timeout: 10
+      register: health_check
+      retries: 3
+      delay: 5
+      until: health_check.status == 200
+
+    - name: Validate models are loaded
+      fail:
+        msg: "No models found in gateway response"
+      when: 
+        - health_check.json is defined
+        - health_check.json.models is defined
+        - health_check.json.models | length == 0
+
+    - name: Display deployment success
+      debug:
+        msg: |
+          ✅ DEPLOYMENT SUCCESSFUL
+          Service: {{ gateway_service_name }} is {{ final_service_check.status.ActiveState }}
+          Port: {{ gateway_port }} will be tested in actual run
+          Models: Will be validated in actual run
+
+    - name: Save deployment confirmation
+      copy:
+        content: |
+          === WEBUI GATEWAY DEPLOYMENT COMPLETE ===
+          Host: {{ ansible_hostname }}
+          IP: {{ ansible_default_ipv4.address }}
+          Port: {{ gateway_port }}
+          Service: {{ gateway_service_name }}
+          Status: {{ 'OK' if health_check.status == 200 else 'ERROR' }}
+          Time: {{ ansible_date_time.iso8601 }}
+          
+          Service Management:
+          - Status: sudo systemctl status {{ gateway_service_name }}
+          - Logs: sudo journalctl -u {{ gateway_service_name }} -f
+          - Test: curl http://{{ ansible_default_ipv4.address }}:{{ gateway_port }}/api/tags
+        dest: "{{ gateway_home }}/deployment_status.txt"
+        owner: "{{ gateway_user }}"
+        group: "{{ gateway_user }}"
+        mode: '0644'

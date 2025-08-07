@@ -1,27 +1,71 @@
 import httpx
 import logging
-import yaml  # <-- Import the YAML library
-from fastapi import FastAPI, HTTPException, Request
+import os
+import sys
+from pathlib import Path
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
+# --- The only configuration logic needed is to import and instantiate the class ---
+from gateway_app.config import GatewayConfig
+
 # ===================================================================
-# --- Configuration Loader ---
+# --- Centralized Configuration with Dynamic Path Resolution ---
 # ===================================================================
-MODEL_MAP = {}  # Start with an empty map
+# Get the directory of this script for consistent file location
+script_dir = Path(__file__).parent.absolute()
+config_path = script_dir / "gateway_app" / "config.yaml"
 
 try:
-    with open("config.yaml", "r") as f:
-        config = yaml.safe_load(f)
-        MODEL_MAP = config.get("model_map", {})
+    config = GatewayConfig(config_path=str(config_path))
+    MODEL_MAP = config.get_model_mapping()
+    
+    # Enhanced validation for MODEL_MAP entries
     if not MODEL_MAP:
-        logging.warning("model_map in config.yaml is empty or not found.")
-except FileNotFoundError:
-    logging.error("CRITICAL: config.yaml not found. The gateway will not be able to route models.")
+        logging.error("CRITICAL: No model mappings found in configuration!")
+        raise RuntimeError("Configuration validation failed: Empty model map")
+    
+    # Validate each MODEL_MAP entry
+    invalid_entries = []
+    for model_name, backend_host in MODEL_MAP.items():
+        # Check model name is a non-empty string
+        if not isinstance(model_name, str) or not model_name.strip():
+            invalid_entries.append(f"Invalid model name: '{model_name}' (must be non-empty string)")
+        
+        # Check backend host format (should be host:port)
+        if not isinstance(backend_host, str) or not backend_host.strip():
+            invalid_entries.append(f"Invalid backend host for '{model_name}': '{backend_host}' (must be non-empty string)")
+        elif ':' not in backend_host or len(backend_host.split(':')) != 2:
+            invalid_entries.append(f"Invalid backend host format for '{model_name}': '{backend_host}' (expected format: host:port)")
+        else:
+            # Validate port is numeric
+            try:
+                host, port = backend_host.split(':')
+                if not host.strip():
+                    invalid_entries.append(f"Empty host in '{model_name}': '{backend_host}'")
+                port_num = int(port)
+                if not (1 <= port_num <= 65535):
+                    invalid_entries.append(f"Invalid port range for '{model_name}': {port_num} (must be 1-65535)")
+            except ValueError:
+                invalid_entries.append(f"Non-numeric port for '{model_name}': '{backend_host}'")
+    
+    # Log validation results
+    if invalid_entries:
+        for error in invalid_entries:
+            logging.error(f"Configuration validation error: {error}")
+        raise RuntimeError(f"Configuration validation failed: {len(invalid_entries)} invalid entries found")
+    else:
+        logging.info(f"Configuration validation passed: {len(MODEL_MAP)} valid model mappings loaded")
+        for model, host in MODEL_MAP.items():
+            logging.info(f"  ✓ {model} → {host}")
+
 except Exception as e:
-    logging.error(f"CRITICAL: Error loading config.yaml: {e}")
+    logging.error(f"CRITICAL: Failed to load or validate configuration: {e}")
+    # Exit with error to prevent running with invalid configuration
+    sys.exit(1)
 # ===================================================================
 
 # --- Logging Setup ---
@@ -63,7 +107,7 @@ async def stream_ollama_response(backend_url: str, payload: OllamaChatRequest):
 async def api_tags():
     """Returns the list of models defined in our MODEL_MAP."""
     logger.info(f"Serving model list from configuration.")
-    models = [{"name": model_id, "model": model_id} for model_id in MODEL_MAP.keys()]
+    models = [{"name": model_id, "model": model_id} for model_id in MODEL_MAP]
     return {"models": models}
 
 @app.post("/api/chat")

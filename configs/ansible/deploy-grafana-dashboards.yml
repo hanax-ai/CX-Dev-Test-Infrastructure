@@ -1,0 +1,9 @@
+---
+- name: Deploy all Grafana Dashboards
+  hosts: hx-metrics-server
+  become: false
+  vars_files:
+    - group_vars/all/vault.yml
+
+  roles:
+    - grafana_dashboards
